@@ -1,0 +1,25 @@
+{
+  "name": "@corybuecker/analytics-collector",
+  "version": "0.0.1-dev",
+  "description": "Privacy-centric analytics events aggregator with multiple storage integrations",
+  "homepage": "https://github.com/corybuecker/analytics-collector#readme",
+  "bugs": {
+    "url": "https://github.com/corybuecker/analytics-collector/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/corybuecker/analytics-collector.git"
+  },
+  "license": "Unlicense",
+  "author": "Cory Buecker",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

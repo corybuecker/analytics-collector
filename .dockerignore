@@ -1,0 +1,6 @@
+/target
+/assets
+/static/*.css
+/static/*.js
+.env
+/k8s
