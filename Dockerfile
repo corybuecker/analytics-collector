@@ -10,7 +10,7 @@ COPY templates /build/templates
 RUN cargo build --release
 RUN cp /build/target/release/analytics-collector /build/analytics-collector
 
-FROM debian@sha256:00cd074b40c4d99ff0c24540bdde0533ca3791edcdac0de36d6b9fb3260d89e2
+FROM debian@sha256:264982ff4d18000fa74540837e2c43ca5137a53a83f8f62c7b3803c0f0bdcd56
 RUN mkdir -p /opt/analytics-collector
 WORKDIR /opt/analytics-collector
 COPY --from=backend_builder /build/analytics-collector /opt/analytics-collector/
