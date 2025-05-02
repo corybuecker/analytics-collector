@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "outDir": "./lib",
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2021",
+  }
+}
