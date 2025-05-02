@@ -16,7 +16,7 @@ async fn main() {
 }
 
 async fn handle_event() -> String {
-    "tesT".to_string()
+    "test".to_string()
 }
 
 async fn shutdown_handler() {
