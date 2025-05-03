@@ -26,13 +26,22 @@ pub async fn validate_content_type(
     request: Request,
     next: Next,
 ) -> Result<Response, ServerError> {
+    let build_error_response = |status, msg: &str| {
+        let message = msg.to_string();
+
+        Response::builder()
+            .status(status)
+            .body(message.into())
+            .map_err(|e| anyhow!("could not create response: {}", e))
+    };
+
     let content_type = match headers.get(CONTENT_TYPE) {
         Some(ct) => ct,
         None => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Missing Content-Type header".into())
-                .map_err(|e| anyhow!("could not create response: {}", e))?);
+            return Ok(build_error_response(
+                StatusCode::BAD_REQUEST,
+                "Missing Content-Type header",
+            )?);
         }
     };
 
@@ -41,10 +50,10 @@ pub async fn validate_content_type(
         .map_err(|e| anyhow!("could not convert Content-Type header to string: {}", e))?;
 
     if !matches!(content_type, "application/json" | "text/plain") {
-        return Ok(Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid Content-Type header".into())
-            .map_err(|e| anyhow!("could not create response: {}", e))?);
+        return Ok(build_error_response(
+            StatusCode::BAD_REQUEST,
+            "Invalid Content-Type header",
+        )?);
     }
 
     Ok(next.run(request).await)
