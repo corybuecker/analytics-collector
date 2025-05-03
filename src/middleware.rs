@@ -11,7 +11,7 @@ use axum::{
 pub async fn validate_body_length(request: Request, next: Next) -> Result<Response, ServerError> {
     let (parts, body) = request.into_parts();
     let size_hint = body.size_hint();
-    if size_hint.lower() > 1024 * 1024 {
+    if size_hint.lower() > 1024 {
         return Ok(Response::builder()
             .status(StatusCode::PAYLOAD_TOO_LARGE)
             .body("Request body too large".into())
