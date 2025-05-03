@@ -14,12 +14,17 @@
   "author": "Cory Buecker",
   "type": "module",
   "scripts": {
+    "build:watch": "nodemon --watch src --ext ts --exec \"npm run build\"",
+    "build": "esbuild --bundle lib/index.js --outfile=dist/index.js --format=esm --sourcemap --minify",
+    "prebuild": "rm -rf lib && rm -f dist/* && tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "exports": {
-    ".": "./lib/index.js"
+    ".": "./dist"
   },
   "devDependencies": {
+    "esbuild": "^0.25.3",
+    "nodemon": "^3.1.10",
     "typescript": "^5.8.3"
   }
 }

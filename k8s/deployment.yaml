@@ -37,13 +37,13 @@ spec:
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault
-          # readinessProbe:
-          #   httpGet:
-          #     path: /healthcheck
-          #     port: 8000
-          #   periodSeconds: 5
-          # livenessProbe:
-          #   httpGet:
-          #     path: /healthcheck
-          #     port: 8000
-          #   periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+            periodSeconds: 10

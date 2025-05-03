@@ -1,4 +1,9 @@
-use axum::{Router, middleware::from_fn, routing::post};
+use axum::{
+    Router,
+    http::StatusCode,
+    middleware::from_fn,
+    routing::{get, post},
+};
 use middleware::{validate_body_length, validate_content_type};
 use tokio::{select, signal::unix::SignalKind};
 use tower::ServiceBuilder;
@@ -39,7 +44,8 @@ async fn server_handler() {
                 .layer(from_fn(validate_content_type))
                 .layer(from_fn(validate_body_length))
                 .layer(TraceLayer::new_for_http()),
-        );
+        )
+        .route("/healthcheck", get(StatusCode::OK));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
 
