@@ -1,5 +1,5 @@
 use axum::{Router, middleware::from_fn, routing::post};
-use middleware::validate_content_type;
+use middleware::{validate_body_length, validate_content_type};
 use tokio::{select, signal::unix::SignalKind};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -34,8 +34,12 @@ async fn server_handler() {
     let app = Router::new()
         .route("/", post(handle_event))
         .route("/{any}", post(handle_event))
-        .layer(ServiceBuilder::new().layer(from_fn(validate_content_type)))
-        .layer(TraceLayer::new_for_http());
+        .layer(
+            ServiceBuilder::new()
+                .layer(from_fn(validate_content_type))
+                .layer(from_fn(validate_body_length))
+                .layer(TraceLayer::new_for_http()),
+        );
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
 

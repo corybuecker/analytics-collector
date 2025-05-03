@@ -1,11 +1,25 @@
 use crate::errors::ServerError;
 use anyhow::{Result, anyhow};
 use axum::{
+    body::HttpBody,
     extract::Request,
-    http::{HeaderMap, header::CONTENT_TYPE},
+    http::{HeaderMap, StatusCode, header::CONTENT_TYPE},
     middleware::Next,
     response::Response,
 };
+
+pub async fn validate_body_length(request: Request, next: Next) -> Result<Response, ServerError> {
+    let (parts, body) = request.into_parts();
+    let size_hint = body.size_hint();
+    if size_hint.lower() > 1024 {
+        return Ok(Response::builder()
+            .status(StatusCode::PAYLOAD_TOO_LARGE)
+            .body("Request body too large".into())
+            .map_err(|e| anyhow!("could not create response: {}", e))?);
+    }
+
+    Ok(next.run(Request::from_parts(parts, body)).await)
+}
 
 pub async fn validate_content_type(
     headers: HeaderMap,
@@ -16,7 +30,7 @@ pub async fn validate_content_type(
         Some(ct) => ct,
         None => {
             return Ok(Response::builder()
-                .status(400)
+                .status(StatusCode::BAD_REQUEST)
                 .body("Missing Content-Type header".into())
                 .map_err(|e| anyhow!("could not create response: {}", e))?);
         }
@@ -28,7 +42,7 @@ pub async fn validate_content_type(
 
     if !matches!(content_type, "application/json" | "text/plain") {
         return Ok(Response::builder()
-            .status(400)
+            .status(StatusCode::BAD_REQUEST)
             .body("Invalid Content-Type header".into())
             .map_err(|e| anyhow!("could not create response: {}", e))?);
     }
@@ -107,5 +121,23 @@ mod tests {
 
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn test_body_too_large_returns_413() {
+        let app = Router::new()
+            .route("/", get("OK"))
+            .layer(from_fn(validate_body_length));
+
+        // Create a body larger than 1MB
+        let large_body = vec![b'a'; 1024 * 1024 + 1];
+        let request = Request::builder()
+            .uri("/")
+            .method("GET")
+            .body(Body::from(large_body))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), 413);
     }
 }
