@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-collector
+  namespace: analytics-collector
+  labels:
+    app: analytics-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: analytics-collector
+  template:
+    metadata:
+      labels:
+        app: analytics-collector
+    spec:
+      containers:
+        - name: analytics-collector
+          image: analytics-collector
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: analytics-collector
+          resources:
+            limits:
+              memory: 512M
+              cpu: 150m
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          # readinessProbe:
+          #   httpGet:
+          #     path: /healthcheck
+          #     port: 8000
+          #   periodSeconds: 5
+          # livenessProbe:
+          #   httpGet:
+          #     path: /healthcheck
+          #     port: 8000
+          #   periodSeconds: 10
