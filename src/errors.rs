@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use tracing::error;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -19,6 +20,8 @@ where
 
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
+        error!("Error: {:?}", self.0);
+
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal Server Error".to_string(),
