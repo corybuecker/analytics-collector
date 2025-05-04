@@ -1,0 +1,6 @@
+services:
+  jaeger:
+    image: jaegertracing/jaeger@sha256:20d715ade1cf32e8c2be1a288317c2126376ce60811be71f0856793d7f849127 # 2.5.0
+    ports:
+      - 16686:16686
+      - 4318:4318
