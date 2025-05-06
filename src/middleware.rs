@@ -1,4 +1,4 @@
-use crate::errors::ServerError;
+use crate::errors::ApplicationError;
 use anyhow::{Result, anyhow};
 use axum::{
     body::HttpBody,
@@ -8,7 +8,10 @@ use axum::{
     response::Response,
 };
 
-pub async fn validate_body_length(request: Request, next: Next) -> Result<Response, ServerError> {
+pub async fn validate_body_length(
+    request: Request,
+    next: Next,
+) -> Result<Response, ApplicationError> {
     let (parts, body) = request.into_parts();
     let size_hint = body.size_hint();
     if size_hint.lower() > 1024 {
@@ -25,7 +28,7 @@ pub async fn validate_content_type(
     headers: HeaderMap,
     request: Request,
     next: Next,
-) -> Result<Response, ServerError> {
+) -> Result<Response, ApplicationError> {
     let build_error_response = |status, msg: &str| {
         let message = msg.to_string();
 
