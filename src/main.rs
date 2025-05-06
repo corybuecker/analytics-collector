@@ -1,5 +1,6 @@
 mod errors;
 mod middleware;
+mod schemas;
 mod storage;
 mod utilities;
 
@@ -13,7 +14,7 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
-use errors::ServerError;
+use errors::ApplicationError;
 use libsql::{Connection, params};
 use middleware::{validate_body_length, validate_content_type};
 use std::sync::Arc;
@@ -27,6 +28,7 @@ use utilities::initialize_tracing;
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub connection: Arc<libsql::Connection>,
+    pub validator: Arc<jsonschema::Validator>,
 }
 
 #[tokio::main]
@@ -43,7 +45,15 @@ async fn main() {
 async fn handle_event(
     State(state): State<AppState>,
     payload: String,
-) -> Result<impl IntoResponse, ServerError> {
+) -> Result<impl IntoResponse, ApplicationError> {
+    let json_payload = serde_json::from_str(&payload)
+        .map_err(|e| ApplicationError::InvalidPayload(e.to_string()))?;
+
+    state
+        .validator
+        .validate(&json_payload)
+        .map_err(|e| ApplicationError::InvalidPayload(e.to_string()))?;
+
     state
         .connection
         .execute(
@@ -53,7 +63,7 @@ async fn handle_event(
         .instrument(info_span!("insert_event"))
         .await?;
 
-    Ok(StatusCode::ACCEPTED)
+    Ok((StatusCode::ACCEPTED, String::new()))
 }
 
 async fn shutdown_handler(providers: Vec<utilities::Provider>) {
@@ -81,6 +91,9 @@ async fn shutdown_handler(providers: Vec<utilities::Provider>) {
 async fn server_handler(connection: Connection) {
     let state = AppState {
         connection: Arc::new(connection),
+        validator: Arc::new(
+            schemas::event_validator().expect("failed to create JSON schema validator"),
+        ),
     };
     let app = Router::new()
         .route("/", post(handle_event))
