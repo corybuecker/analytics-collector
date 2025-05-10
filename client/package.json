@@ -1,0 +1,33 @@
+{
+  "name": "@cory/analytics-collector",
+  "version": "0.0.4-dev",
+  "license": "Unlicense",
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.25.4",
+    "nodemon": "^3.1.10",
+    "typescript": "^5.8.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/corybuecker/analytics-collector.git"
+  },
+  "homepage": "https://github.com/corybuecker/analytics-collector",
+  "scripts": {
+    "compile": "rm -rf lib dist && tsc",
+    "prebuild": "npm run compile",
+    "build": "esbuild ./lib --bundle --minify --sourcemap --outfile=dist/index.js --target=es2021 --format=esm",
+    "build:watch": "nodemon --watch src --ext ts --exec 'npm run build'"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./lib/index.d.ts",
+        "default": "./lib/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ]
+}

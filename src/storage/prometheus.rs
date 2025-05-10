@@ -13,6 +13,7 @@ struct Event {
     event_name: String,
     action: Option<String>,
     app_id: Option<String>,
+    path: Option<String>,
 }
 
 pub async fn publish(connection: Arc<Connection>, app_id: String) -> Result<String> {

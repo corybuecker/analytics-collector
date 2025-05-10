@@ -20,9 +20,9 @@ spec:
           image: analytics-collector
           imagePullPolicy: IfNotPresent
           ports:
-            - name: metrics
-              containerPort: 8000
             - name: http
+              containerPort: 8000
+            - name: metrics
               containerPort: 8001
           envFrom:
             - secretRef:
