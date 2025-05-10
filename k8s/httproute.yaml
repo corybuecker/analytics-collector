@@ -13,4 +13,4 @@ spec:
     - backendRefs:
         - name: analytics-collector
           namespace: analytics-collector
-          port: 8000
+          port: 8001
