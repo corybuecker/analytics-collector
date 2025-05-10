@@ -125,6 +125,8 @@ async fn generate_metrics(
 }
 
 async fn metrics_server_handler(connection: Arc<Connection>) {
+    // This server is dedicated to serving Prometheus metrics for observability purposes.
+    // It uses a separate port (8000) to isolate metrics traffic from application traffic.
     let app_id = generate_uuid_v4();
     let app = Router::new()
         .route("/metrics", get(generate_metrics))
