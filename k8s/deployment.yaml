@@ -6,7 +6,7 @@ metadata:
   labels:
     app: analytics-collector
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: analytics-collector
@@ -29,8 +29,8 @@ spec:
                 name: analytics-collector
           resources:
             limits:
-              memory: 512M
-              cpu: 150m
+              memory: 128M
+              cpu: 50m
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
