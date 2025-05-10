@@ -17,6 +17,9 @@ pub fn event_validator() -> Result<Validator> {
               "action": {
                 "type": "string",
                 "enum": ["page_view", "click"]
+              },
+              "path": {
+                "type": "string"
               }
             },
             "required": ["event_name"],

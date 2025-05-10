@@ -110,7 +110,7 @@ async fn server_handler(connection: Arc<Connection>) {
         // putting the healthcheck route at the end to avoid it being processed by the middleware and logging
         .route("/healthcheck", get(StatusCode::OK));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8001").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
 
     axum::serve(listener, app)
         .await
@@ -133,7 +133,7 @@ async fn metrics_server_handler(connection: Arc<Connection>) {
         .with_state((connection, app_id))
         .layer(TraceLayer::new_for_http());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8001").await.unwrap();
 
     axum::serve(listener, app)
         .await

@@ -52,7 +52,12 @@ pub async fn validate_content_type(
         .to_str()
         .map_err(|e| anyhow!("could not convert Content-Type header to string: {}", e))?;
 
-    if !matches!(content_type, "application/json" | "text/plain") {
+    if !["application/json", "text/plain"]
+        .iter()
+        .any(|allowed| content_type.contains(allowed))
+    {
+        tracing::error!("Invalid Content-Type header: {}", content_type);
+
         return Ok(build_error_response(
             StatusCode::BAD_REQUEST,
             "Invalid Content-Type header",

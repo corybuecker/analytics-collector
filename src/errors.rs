@@ -25,7 +25,10 @@ impl IntoResponse for ApplicationError {
         error!("Error: {:?}", self);
 
         match self {
-            ApplicationError::InvalidPayload(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+            ApplicationError::InvalidPayload(e) => {
+                error!("Invalid payload: {}", e);
+                (StatusCode::BAD_REQUEST, e).into_response()
+            }
             ApplicationError::Unknown(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal Server Error".to_string(),

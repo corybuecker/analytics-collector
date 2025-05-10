@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: "npm"
-    directory: "/assets"
+    directory: "/client"
     schedule:
       interval: "weekly"
 
