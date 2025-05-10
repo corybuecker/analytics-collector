@@ -23,7 +23,7 @@ use tokio::{select, signal::unix::SignalKind};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{Instrument, info_span};
-use utilities::initialize_tracing;
+use utilities::{generate_uuid_v4, initialize_tracing};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -35,10 +35,12 @@ pub struct AppState {
 async fn main() {
     let providers = initialize_tracing().expect("could not initialize logging/tracing");
     let database = initialize().await.expect("failed to initialize database");
+    let database = Arc::new(database);
 
     select! {
         _ = shutdown_handler(providers) => {}
-        _ = server_handler(database) => {}
+        _ = server_handler(database.clone()) => {}
+        _ = metrics_server_handler(database.clone()) => {}
     }
 }
 
@@ -57,7 +59,7 @@ async fn handle_event(
     state
         .connection
         .execute(
-            "INSERT INTO events (ts, event) VALUES (?1, ?2)",
+            "INSERT INTO events (recorded_at, event) VALUES (?1, ?2)",
             params!(Utc::now().to_rfc3339(), payload),
         )
         .instrument(info_span!("insert_event"))
@@ -88,9 +90,9 @@ async fn shutdown_handler(providers: Vec<utilities::Provider>) {
     }
 }
 
-async fn server_handler(connection: Connection) {
+async fn server_handler(connection: Arc<Connection>) {
     let state = AppState {
-        connection: Arc::new(connection),
+        connection,
         validator: Arc::new(
             schemas::event_validator().expect("failed to create JSON schema validator"),
         ),
@@ -107,6 +109,29 @@ async fn server_handler(connection: Connection) {
         .with_state(state)
         // putting the healthcheck route at the end to avoid it being processed by the middleware and logging
         .route("/healthcheck", get(StatusCode::OK));
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8001").await.unwrap();
+
+    axum::serve(listener, app)
+        .await
+        .expect("failed to start server")
+}
+
+async fn generate_metrics(
+    State((connection, app_id)): State<(Arc<Connection>, String)>,
+) -> Result<impl IntoResponse, ApplicationError> {
+    let metrics = storage::prometheus::publish(connection, app_id).await?;
+    Ok((StatusCode::OK, metrics))
+}
+
+async fn metrics_server_handler(connection: Arc<Connection>) {
+    // This server is dedicated to serving Prometheus metrics for observability purposes.
+    // It uses a separate port (8000) to isolate metrics traffic from application traffic.
+    let app_id = generate_uuid_v4();
+    let app = Router::new()
+        .route("/metrics", get(generate_metrics))
+        .with_state((connection, app_id))
+        .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
 
