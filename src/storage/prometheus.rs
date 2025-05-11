@@ -89,13 +89,21 @@ mod tests {
             .lines()
             .find(|l| l.contains("event_name=\"signup\""))
             .unwrap();
-        assert!(signup_count.ends_with("2"));
+        let signup_count_value: i32 = signup_count
+            .rsplit_once(' ')
+            .and_then(|(_, count)| count.parse().ok())
+            .expect("Failed to parse signup count");
+        assert_eq!(signup_count_value, 2);
 
         let login_count = metrics
             .lines()
             .find(|l| l.contains("event_name=\"login\""))
             .unwrap();
-        assert!(login_count.ends_with("1"));
+        let login_count_value: i32 = login_count
+            .rsplit_once(' ')
+            .and_then(|(_, count)| count.parse().ok())
+            .expect("Failed to parse login count");
+        assert_eq!(login_count_value, 1);
     }
 
     #[tokio::test]
