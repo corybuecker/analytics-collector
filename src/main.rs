@@ -1,4 +1,5 @@
 mod errors;
+mod exporter;
 mod middleware;
 mod schemas;
 mod storage;
@@ -15,6 +16,7 @@ use axum::{
 };
 use chrono::Utc;
 use errors::ApplicationError;
+use exporter::Exporter;
 use libsql::{Connection, params};
 use middleware::{validate_body_length, validate_content_type};
 use std::sync::Arc;
@@ -120,7 +122,8 @@ async fn server_handler(connection: Arc<Connection>) {
 async fn generate_metrics(
     State((connection, app_id)): State<(Arc<Connection>, String)>,
 ) -> Result<impl IntoResponse, ApplicationError> {
-    let metrics = storage::prometheus::publish(connection, app_id).await?;
+    let exporter = exporter::prometheus::PrometheusExporter {};
+    let metrics = exporter.publish(connection, app_id).await?;
     Ok((StatusCode::OK, metrics))
 }
 

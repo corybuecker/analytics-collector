@@ -1,6 +1,12 @@
 services:
   jaeger:
-    image: jaegertracing/jaeger@sha256:20d715ade1cf32e8c2be1a288317c2126376ce60811be71f0856793d7f849127 # 2.5.0
+    image: jaegertracing/jaeger@sha256:9b29aad1b65cd61016428ec15f3e04d75d4969f3551977d4fbed5acc4c85ec8c # 2.6.0
     ports:
       - 16686:16686
       - 4318:4318
+  database:
+    image: postgres@sha256:864831322bf2520e7d03d899b01b542de6de9ece6fe29c89f19dc5e1d5568ccf # 17.5
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust

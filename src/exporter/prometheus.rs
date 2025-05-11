@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql::{Connection, params};
+use libsql::params;
 use prometheus_client::{
     encoding::{EncodeLabelSet, text::encode},
     metrics::{counter::Counter, family::Family},
@@ -7,6 +7,8 @@ use prometheus_client::{
 };
 use serde::Deserialize;
 use std::sync::Arc;
+
+use super::Exporter;
 
 #[derive(Debug, Deserialize, EncodeLabelSet, Clone, Hash, Eq, PartialEq)]
 struct Event {
@@ -16,28 +18,32 @@ struct Event {
     path: Option<String>,
 }
 
-pub async fn publish(connection: Arc<Connection>, app_id: String) -> Result<String> {
-    let mut registry = Registry::default();
-    let counter = Family::<Event, Counter>::default();
+pub struct PrometheusExporter;
 
-    registry.register("events", "analytics", counter.clone());
+impl Exporter for PrometheusExporter {
+    async fn publish(&self, connection: Arc<libsql::Connection>, app_id: String) -> Result<String> {
+        let mut registry = Registry::default();
+        let counter = Family::<Event, Counter>::default();
 
-    let mut results = connection
-        .clone()
-        .query("select event from events", params![])
-        .await?;
+        registry.register("events", "analytics", counter.clone());
 
-    while let Some(row) = results.next().await? {
-        let event: String = row.get(0)?;
-        if let Ok(mut event) = serde_json::from_str::<Event>(&event) {
-            event.app_id = Some(app_id.clone());
-            counter.get_or_create(&event).inc();
+        let mut results = connection
+            .clone()
+            .query("select event from events", params![])
+            .await?;
+
+        while let Some(row) = results.next().await? {
+            let event: String = row.get(0)?;
+            if let Ok(mut event) = serde_json::from_str::<Event>(&event) {
+                event.app_id = Some(app_id.clone());
+                counter.get_or_create(&event).inc();
+            }
         }
-    }
 
-    let mut buffer = String::new();
-    encode(&mut buffer, &registry)?;
-    Ok(buffer)
+        let mut buffer = String::new();
+        encode(&mut buffer, &registry)?;
+        Ok(buffer)
+    }
 }
 
 #[cfg(test)]
@@ -45,7 +51,7 @@ mod tests {
     use super::*;
     use crate::storage::memory::initialize;
     use chrono::Utc;
-    use libsql::params;
+    use libsql::{Connection, params};
     use std::sync::Arc;
 
     async fn setup_db_with_events(events: Vec<&str>) -> Arc<Connection> {
@@ -72,8 +78,8 @@ mod tests {
         ];
         let conn = setup_db_with_events(events).await;
         let app_id = "test-app".to_string();
-
-        let metrics = publish(conn, app_id.clone()).await.unwrap();
+        let exporter = PrometheusExporter {};
+        let metrics = exporter.publish(conn, app_id.clone()).await.unwrap();
 
         // Should contain event_name, action, path, and app_id as labels
         assert!(metrics.contains("event_name=\"signup\""));
@@ -111,7 +117,8 @@ mod tests {
         let conn = setup_db_with_events(vec![]).await;
         let app_id = "empty-app".to_string();
 
-        let metrics = publish(conn, app_id).await.unwrap();
+        let exporter = PrometheusExporter {};
+        let metrics = exporter.publish(conn, app_id).await.unwrap();
         // Should still output valid Prometheus format, but no event lines
         assert!(metrics.contains("# TYPE events counter"));
         assert!(!metrics.contains("event_name="));
@@ -127,7 +134,8 @@ mod tests {
         let conn = setup_db_with_events(events).await;
         let app_id = "bad-json".to_string();
 
-        let metrics = publish(conn, app_id).await.unwrap();
+        let exporter = PrometheusExporter {};
+        let metrics = exporter.publish(conn, app_id).await.unwrap();
         // Only two valid events should be counted
         let signup_count = metrics
             .lines()
