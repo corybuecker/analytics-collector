@@ -4,7 +4,6 @@ class Anchor {
             const anchors = document.querySelectorAll("a")
 
             anchors.forEach((anchor: HTMLAnchorElement) => {
-                console.log(anchor)
                 anchor.addEventListener("click", (_event: MouseEvent) => {
                     const href = anchor.getAttribute("href")
 
