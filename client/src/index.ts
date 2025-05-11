@@ -1,3 +1,4 @@
+import Anchor from "./collectors/anchor";
 import PageView from "./collectors/page_view";
 
 type Options = {
@@ -23,6 +24,7 @@ class AnalyticsCollector {
 
   public start(): void {
     new PageView(this.endpoint)
+    new Anchor(this.endpoint)
   }
 }
 
