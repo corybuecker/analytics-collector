@@ -133,6 +133,11 @@ mod tests {
             .lines()
             .find(|l| l.contains("event_name=\"signup\""))
             .unwrap();
-        assert!(signup_count.ends_with("2"));
+        let count: u64 = signup_count
+            .split_whitespace()
+            .last()
+            .and_then(|v| v.parse().ok())
+            .expect("Failed to parse count from metrics");
+        assert_eq!(count, 2);
     }
 }
