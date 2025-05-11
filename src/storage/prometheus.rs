@@ -39,3 +39,92 @@ pub async fn publish(connection: Arc<Connection>, app_id: String) -> Result<Stri
     encode(&mut buffer, &registry)?;
     Ok(buffer)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::memory::initialize;
+    use chrono::Utc;
+    use libsql::params;
+    use std::sync::Arc;
+
+    async fn setup_db_with_events(events: Vec<&str>) -> Arc<Connection> {
+        let connection = initialize().await.unwrap();
+
+        for event in events {
+            connection
+                .execute(
+                    "INSERT INTO events (event, recorded_at) VALUES (?1, ?2)",
+                    params![event, Utc::now().to_rfc3339()],
+                )
+                .await
+                .unwrap();
+        }
+        Arc::new(connection)
+    }
+
+    #[tokio::test]
+    async fn test_publish_counts_events() {
+        let events = vec![
+            r#"{"event_name":"signup","action":"page_view","path":"/"}"#,
+            r#"{"event_name":"signup","action":"page_view","path":"/"}"#,
+            r#"{"event_name":"login","action":"click","path":"/login"}"#,
+        ];
+        let conn = setup_db_with_events(events).await;
+        let app_id = "test-app".to_string();
+
+        let metrics = publish(conn, app_id.clone()).await.unwrap();
+
+        // Should contain event_name, action, path, and app_id as labels
+        assert!(metrics.contains("event_name=\"signup\""));
+        assert!(metrics.contains("event_name=\"login\""));
+        assert!(metrics.contains("action=\"page_view\""));
+        assert!(metrics.contains("action=\"click\""));
+        assert!(metrics.contains("app_id=\"test-app\""));
+        assert!(metrics.contains("path=\"/\""));
+        assert!(metrics.contains("path=\"/login\""));
+
+        // Should count two signups and one login
+        let signup_count = metrics
+            .lines()
+            .find(|l| l.contains("event_name=\"signup\""))
+            .unwrap();
+        assert!(signup_count.ends_with("2"));
+
+        let login_count = metrics
+            .lines()
+            .find(|l| l.contains("event_name=\"login\""))
+            .unwrap();
+        assert!(login_count.ends_with("1"));
+    }
+
+    #[tokio::test]
+    async fn test_publish_handles_empty_table() {
+        let conn = setup_db_with_events(vec![]).await;
+        let app_id = "empty-app".to_string();
+
+        let metrics = publish(conn, app_id).await.unwrap();
+        // Should still output valid Prometheus format, but no event lines
+        assert!(metrics.contains("# TYPE events counter"));
+        assert!(!metrics.contains("event_name="));
+    }
+
+    #[tokio::test]
+    async fn test_publish_ignores_invalid_json() {
+        let events = vec![
+            r#"{"event_name":"signup"}"#,
+            r#"not a json"#,
+            r#"{"event_name":"signup"}"#,
+        ];
+        let conn = setup_db_with_events(events).await;
+        let app_id = "bad-json".to_string();
+
+        let metrics = publish(conn, app_id).await.unwrap();
+        // Only two valid events should be counted
+        let signup_count = metrics
+            .lines()
+            .find(|l| l.contains("event_name=\"signup\""))
+            .unwrap();
+        assert!(signup_count.ends_with("2"));
+    }
+}
