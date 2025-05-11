@@ -4,7 +4,7 @@ kind: Kustomization
 images:
   - name: analytics-collector
     newName: ghcr.io/corybuecker/analytics-collector
-    digest: sha256:7d3bd4f26d5c89954ce13c3c787dcf9a239861f7a7385160337f5772b2e69f77
+    digest: sha256:38f86b9e5ce7947ec3b47884d00303c6d5f672c9b3f75d027f564b9d75adfc20
 
 resources:
   - namespace.yaml
