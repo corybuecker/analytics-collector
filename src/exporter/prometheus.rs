@@ -12,8 +12,8 @@ use super::Exporter;
 
 #[derive(Debug, Deserialize, EncodeLabelSet, Clone, Hash, Eq, PartialEq)]
 struct Event {
-    event_name: String,
-    action: Option<String>,
+    entity: String,
+    action: String,
     app_id: Option<String>,
     path: Option<String>,
 }
@@ -72,18 +72,18 @@ mod tests {
     #[tokio::test]
     async fn test_publish_counts_events() {
         let events = vec![
-            r#"{"event_name":"signup","action":"page_view","path":"/"}"#,
-            r#"{"event_name":"signup","action":"page_view","path":"/"}"#,
-            r#"{"event_name":"login","action":"click","path":"/login"}"#,
+            r#"{"entity":"signup","action":"page_view","path":"/"}"#,
+            r#"{"entity":"signup","action":"page_view","path":"/"}"#,
+            r#"{"entity":"login","action":"click","path":"/login"}"#,
         ];
         let conn = setup_db_with_events(events).await;
         let app_id = "test-app".to_string();
         let exporter = PrometheusExporter {};
         let metrics = exporter.publish(conn, app_id.clone()).await.unwrap();
 
-        // Should contain event_name, action, path, and app_id as labels
-        assert!(metrics.contains("event_name=\"signup\""));
-        assert!(metrics.contains("event_name=\"login\""));
+        // Should contain entity, action, path, and app_id as labels
+        assert!(metrics.contains("entity=\"signup\""));
+        assert!(metrics.contains("entity=\"login\""));
         assert!(metrics.contains("action=\"page_view\""));
         assert!(metrics.contains("action=\"click\""));
         assert!(metrics.contains("app_id=\"test-app\""));
@@ -93,7 +93,7 @@ mod tests {
         // Should count two signups and one login
         let signup_count = metrics
             .lines()
-            .find(|l| l.contains("event_name=\"signup\""))
+            .find(|l| l.contains("entity=\"signup\""))
             .unwrap();
         let signup_count_value: i32 = signup_count
             .rsplit_once(' ')
@@ -103,7 +103,7 @@ mod tests {
 
         let login_count = metrics
             .lines()
-            .find(|l| l.contains("event_name=\"login\""))
+            .find(|l| l.contains("entity=\"login\""))
             .unwrap();
         let login_count_value: i32 = login_count
             .rsplit_once(' ')
@@ -121,15 +121,15 @@ mod tests {
         let metrics = exporter.publish(conn, app_id).await.unwrap();
         // Should still output valid Prometheus format, but no event lines
         assert!(metrics.contains("# TYPE events counter"));
-        assert!(!metrics.contains("event_name="));
+        assert!(!metrics.contains("entity="));
     }
 
     #[tokio::test]
     async fn test_publish_ignores_invalid_json() {
         let events = vec![
-            r#"{"event_name":"signup"}"#,
+            r#"{"entity":"signup", "action": "click"}"#,
             r#"not a json"#,
-            r#"{"event_name":"signup"}"#,
+            r#"{"entity":"signup", "action": "click"}"#,
         ];
         let conn = setup_db_with_events(events).await;
         let app_id = "bad-json".to_string();
@@ -139,7 +139,7 @@ mod tests {
         // Only two valid events should be counted
         let signup_count = metrics
             .lines()
-            .find(|l| l.contains("event_name=\"signup\""))
+            .find(|l| l.contains("entity=\"signup\""))
             .unwrap();
         let count: u64 = signup_count
             .split_whitespace()
