@@ -36,7 +36,9 @@ pub fn generate_uuid_v4() -> String {
 
 pub fn initialize_tracing() -> anyhow::Result<Vec<Provider>> {
     let target = tracing_subscriber::filter::Targets::new()
-        .with_default(tracing::level_filters::LevelFilter::DEBUG);
+        .with_default(tracing::level_filters::LevelFilter::DEBUG)
+        .with_target("tokio_postgres::prepare", None)
+        .with_target("tokio_postgres::query", None);
 
     let fmt: Box<dyn Layer<Registry> + Send + Sync> = tracing_subscriber::fmt::layer()
         .with_level(true)

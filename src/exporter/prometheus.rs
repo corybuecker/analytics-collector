@@ -1,3 +1,4 @@
+use super::Exporter;
 use anyhow::Result;
 use libsql::params;
 use prometheus_client::{
@@ -7,8 +8,6 @@ use prometheus_client::{
 };
 use serde::Deserialize;
 use std::sync::Arc;
-
-use super::Exporter;
 
 #[derive(Debug, Deserialize, EncodeLabelSet, Clone, Hash, Eq, PartialEq)]
 struct Event {
@@ -20,8 +19,13 @@ struct Event {
 
 pub struct PrometheusExporter;
 
-impl Exporter for PrometheusExporter {
-    async fn publish(&self, connection: Arc<libsql::Connection>, app_id: String) -> Result<String> {
+impl Exporter<&mut String> for PrometheusExporter {
+    async fn publish(
+        &self,
+        app_id: String,
+        connection: Arc<libsql::Connection>,
+        buffer: &mut String,
+    ) -> Result<()> {
         let mut registry = Registry::default();
         let counter = Family::<Event, Counter>::default();
 
@@ -40,16 +44,15 @@ impl Exporter for PrometheusExporter {
             }
         }
 
-        let mut buffer = String::new();
-        encode(&mut buffer, &registry)?;
-        Ok(buffer)
+        encode(buffer, &registry)?;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::memory::initialize;
+    use crate::{storage::memory::initialize, utilities::generate_uuid_v4};
     use chrono::Utc;
     use libsql::{Connection, params};
     use std::sync::Arc;
@@ -60,8 +63,8 @@ mod tests {
         for event in events {
             connection
                 .execute(
-                    "INSERT INTO events (event, recorded_at) VALUES (?1, ?2)",
-                    params![event, Utc::now().to_rfc3339()],
+                    "INSERT INTO events (id, event, recorded_at) VALUES (?1, ?2, ?3)",
+                    params![generate_uuid_v4(), event, Utc::now().to_rfc3339()],
                 )
                 .await
                 .unwrap();
@@ -79,19 +82,23 @@ mod tests {
         let conn = setup_db_with_events(events).await;
         let app_id = "test-app".to_string();
         let exporter = PrometheusExporter {};
-        let metrics = exporter.publish(conn, app_id.clone()).await.unwrap();
+        let mut buffer = String::new();
+        exporter
+            .publish(app_id.clone(), conn, &mut buffer)
+            .await
+            .unwrap();
 
         // Should contain entity, action, path, and app_id as labels
-        assert!(metrics.contains("entity=\"signup\""));
-        assert!(metrics.contains("entity=\"login\""));
-        assert!(metrics.contains("action=\"page_view\""));
-        assert!(metrics.contains("action=\"click\""));
-        assert!(metrics.contains("app_id=\"test-app\""));
-        assert!(metrics.contains("path=\"/\""));
-        assert!(metrics.contains("path=\"/login\""));
+        assert!(buffer.contains("entity=\"signup\""));
+        assert!(buffer.contains("entity=\"login\""));
+        assert!(buffer.contains("action=\"page_view\""));
+        assert!(buffer.contains("action=\"click\""));
+        assert!(buffer.contains("app_id=\"test-app\""));
+        assert!(buffer.contains("path=\"/\""));
+        assert!(buffer.contains("path=\"/login\""));
 
         // Should count two signups and one login
-        let signup_count = metrics
+        let signup_count = buffer
             .lines()
             .find(|l| l.contains("entity=\"signup\""))
             .unwrap();
@@ -101,7 +108,7 @@ mod tests {
             .expect("Failed to parse signup count");
         assert_eq!(signup_count_value, 2);
 
-        let login_count = metrics
+        let login_count = buffer
             .lines()
             .find(|l| l.contains("entity=\"login\""))
             .unwrap();
@@ -118,10 +125,11 @@ mod tests {
         let app_id = "empty-app".to_string();
 
         let exporter = PrometheusExporter {};
-        let metrics = exporter.publish(conn, app_id).await.unwrap();
+        let mut buffer = String::new();
+        exporter.publish(app_id, conn, &mut buffer).await.unwrap();
         // Should still output valid Prometheus format, but no event lines
-        assert!(metrics.contains("# TYPE events counter"));
-        assert!(!metrics.contains("entity="));
+        assert!(buffer.contains("# TYPE events counter"));
+        assert!(!buffer.contains("entity="));
     }
 
     #[tokio::test]
@@ -133,11 +141,12 @@ mod tests {
         ];
         let conn = setup_db_with_events(events).await;
         let app_id = "bad-json".to_string();
+        let mut buffer = String::new();
 
         let exporter = PrometheusExporter {};
-        let metrics = exporter.publish(conn, app_id).await.unwrap();
+        exporter.publish(app_id, conn, &mut buffer).await.unwrap();
         // Only two valid events should be counted
-        let signup_count = metrics
+        let signup_count = buffer
             .lines()
             .find(|l| l.contains("entity=\"signup\""))
             .unwrap();

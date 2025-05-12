@@ -10,3 +10,7 @@ services:
       - 5432:5432
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: analytics_collector
+      POSTGRES_USER: analytics_collector
+    # volumes:
+    #   - ../migrations/schema.sql:/docker-entrypoint-initdb.d/initialize.sql
