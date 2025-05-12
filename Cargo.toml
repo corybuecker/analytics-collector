@@ -1,6 +1,6 @@
 [package]
 name = "analytics-collector"
-version = "0.0.2-dev"
+version = "0.0.2"
 edition = "2024"
 
 [dependencies]
