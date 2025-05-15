@@ -15,6 +15,7 @@ spec:
       labels:
         app: analytics-collector
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: analytics-collector
           image: analytics-collector
@@ -33,6 +34,7 @@ spec:
               cpu: 50m
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL

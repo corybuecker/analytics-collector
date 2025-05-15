@@ -4,4 +4,4 @@ metadata:
   name: analytics-collector
   labels:
     name: analytics-collector
-    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/enforce: restricted
