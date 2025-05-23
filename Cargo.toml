@@ -1,6 +1,6 @@
 [package]
 name = "analytics-collector"
-version = "0.0.2"
+version = "0.0.3-dev"
 edition = "2024"
 
 [dependencies]
@@ -16,6 +16,7 @@ prometheus-client = "0.23.1"
 serde = "1.0.219"
 serde_json = "1.0.140"
 tokio = { version = "1.45.0", default-features = false, features = ["rt-multi-thread", "tracing", "macros", "signal"] }
+tokio-postgres = { version = "0.7.13" }
 tower = "0.5.2"
 tower-http = { version = "0.6.4", features = ["trace"] }
 tracing = "0.1.41"

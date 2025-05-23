@@ -1,50 +1,10 @@
 use anyhow::Result;
 use jsonschema::Validator;
-use serde_json::json;
+
+const SCHEMA_DEFINITION: &str = include_str!("schema.json");
 
 pub fn event_validator() -> Result<Validator> {
-    let schema = json!(
-        {
-            "type": "object",
-            "properties": {
-              "ts": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "entity": {
-                "type": "string",
-                "enum": ["page", "anchor"]
-              },
-              "action": {
-                "type": "string",
-                "enum": ["view", "click"]
-              },
-              "path": {
-                "type": "string"
-              }
-            },
-            "required": ["entity", "action"],
-            "additionalProperties": false,
-            "allOf": [
-              {
-                "if": {
-                  "properties": { "entity": { "const": "page" } }
-                },
-                "then": {
-                  "properties": { "action": { "const": "view" } }
-                }
-              },
-              {
-                "if": {
-                  "properties": { "entity": { "const": "anchor" } }
-                },
-                "then": {
-                  "properties": { "action": { "const": "click" } }
-                }
-              }
-            ]
-          }
-    );
+    let schema: serde_json::Value = serde_json::from_str(SCHEMA_DEFINITION)?;
 
     jsonschema::validator_for(&schema)
         .map_err(|e| anyhow::anyhow!("could not create JSON schema validator: {}", e))

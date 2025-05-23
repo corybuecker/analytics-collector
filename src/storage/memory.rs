@@ -3,8 +3,9 @@ use libsql::{Builder, Connection};
 
 pub const SCHEMA: &str = r#"
 CREATE TABLE events (
-    recorded_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    event JSONB NOT NULL
+    id TEXT PRIMARY KEY NOT NULL,
+    recorded_at TEXT NOT NULL,
+    event TEXT NOT NULL
 );
 "#;
 
