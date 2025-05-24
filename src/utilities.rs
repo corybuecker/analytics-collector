@@ -2,6 +2,7 @@ use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
 use std::fs::File;
 use std::io::Read;
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{Layer, Registry, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub enum Provider {
@@ -37,8 +38,8 @@ pub fn generate_uuid_v4() -> String {
 pub fn initialize_tracing() -> anyhow::Result<Vec<Provider>> {
     let target = tracing_subscriber::filter::Targets::new()
         .with_default(tracing::level_filters::LevelFilter::DEBUG)
-        .with_target("tokio_postgres::prepare", None)
-        .with_target("tokio_postgres::query", None);
+        .with_target("tokio_postgres::prepare", LevelFilter::ERROR)
+        .with_target("tokio_postgres::query", LevelFilter::ERROR);
 
     let fmt: Box<dyn Layer<Registry> + Send + Sync> = tracing_subscriber::fmt::layer()
         .with_level(true)

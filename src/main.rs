@@ -46,7 +46,7 @@ async fn main() {
     let postgres_client = Arc::new(RwLock::new(postgres_client));
 
     select! {
-        _ = shutdown_handler(providers) => {}
+        _ = shutdown_handler(providers, memory_database.clone(), postgres_client.clone()) => {}
         _ = server_handler(memory_database.clone()) => {}
         _ = metrics_server_handler(memory_database.clone()) => {}
         _ = database_connection_handler(postgres_client.clone()) => {}
@@ -78,7 +78,11 @@ async fn handle_event(
     Ok((StatusCode::ACCEPTED, String::new()))
 }
 
-async fn shutdown_handler(providers: Vec<utilities::Provider>) {
+async fn shutdown_handler(
+    providers: Vec<utilities::Provider>,
+    memory_connection: Arc<libsql::Connection>,
+    postgres_client: Arc<RwLock<Client>>,
+) {
     let mut signal = tokio::signal::unix::signal(SignalKind::terminate())
         .expect("failed to install SIGTERM handler");
 
@@ -98,6 +102,19 @@ async fn shutdown_handler(providers: Vec<utilities::Provider>) {
             }
         }
     }
+
+    let exporter = postgresql::PostgresqlExporter {};
+
+    exporter
+        .publish(
+            "test_app".to_string(),
+            memory_connection.clone(),
+            postgres_client.clone(),
+        )
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to flush events to PostgreSQL: {}", e);
+        });
 }
 
 async fn server_handler(connection: Arc<Connection>) {
