@@ -19,6 +19,7 @@ use errors::ApplicationError;
 use exporter::{Exporter, postgresql};
 use libsql::{Connection, params};
 use middleware::{validate_body_length, validate_content_type};
+use rust_web_common::telemetry::TelemetryBuilder;
 use std::{sync::Arc, time::Duration};
 use storage::memory::initialize;
 use tokio::{select, signal::unix::SignalKind, sync::RwLock, time::sleep_until};
@@ -26,7 +27,7 @@ use tokio_postgres::{Client, NoTls, connect};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{Instrument, info, info_span};
-use utilities::{generate_uuid_v4, initialize_tracing};
+use utilities::generate_uuid_v4;
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -36,7 +37,9 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() {
-    let providers = initialize_tracing().expect("could not initialize logging/tracing");
+    let _telemetry_providers = TelemetryBuilder::new("analytics-collector".to_string())
+        .build()
+        .expect("failed to initialize telemetry");
     let memory_database = initialize().await.expect("failed to initialize database");
     let memory_database = Arc::new(memory_database);
     let postgres_database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
@@ -46,7 +49,7 @@ async fn main() {
     let postgres_client = Arc::new(RwLock::new(postgres_client));
 
     select! {
-        _ = shutdown_handler(providers, memory_database.clone(), postgres_client.clone()) => {}
+        _ = shutdown_handler(memory_database.clone(), postgres_client.clone()) => {}
         _ = server_handler(memory_database.clone()) => {}
         _ = metrics_server_handler(memory_database.clone()) => {}
         _ = database_connection_handler(postgres_client.clone()) => {}
@@ -79,7 +82,6 @@ async fn handle_event(
 }
 
 async fn shutdown_handler(
-    providers: Vec<utilities::Provider>,
     memory_connection: Arc<libsql::Connection>,
     postgres_client: Arc<RwLock<Client>>,
 ) {
@@ -87,21 +89,6 @@ async fn shutdown_handler(
         .expect("failed to install SIGTERM handler");
 
     signal.recv().await;
-
-    for provider in providers {
-        match provider {
-            utilities::Provider::MeterProvider(provider) => {
-                provider
-                    .shutdown()
-                    .expect("failed to shutdown meter provider");
-            }
-            utilities::Provider::TracerProvider(tracer_provider) => {
-                tracer_provider
-                    .shutdown()
-                    .expect("failed to shutdown tracer provider");
-            }
-        }
-    }
 
     let exporter = postgresql::PostgresqlExporter {};
 

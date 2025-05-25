@@ -1,6 +1,6 @@
 [package]
 name = "analytics-collector"
-version = "0.0.3"
+version = "0.0.4-dev"
 edition = "2024"
 
 [dependencies]
@@ -9,10 +9,8 @@ axum = { version = "0.8.4" }
 chrono = { version = "0.4.41" }
 jsonschema = { version = "0.30.0" }
 libsql = { version = "0.9.7", default-features = false, features = ["core"] }
-opentelemetry = { version = "0.29.1" }
-opentelemetry-otlp = { version = "0.29.0" }
-opentelemetry_sdk = { version = "0.29.0" }
 prometheus-client = { version = "0.23.1" }
+rust-web-common = { git = "https://github.com/corybuecker/rust-web-common", branch = "main" }
 serde = { version = "1.0.219" }
 serde_json = { version = "1.0.140" }
 tokio = { version = "1.45.0", default-features = false, features = ["rt-multi-thread", "tracing", "macros", "signal"] }
@@ -20,5 +18,3 @@ tokio-postgres = { version = "0.7.13" }
 tower = { version = "0.5.2" }
 tower-http = { version = "0.6.4", features = ["trace"] }
 tracing = { version = "0.1.41" }
-tracing-opentelemetry = { version = "0.30.0" }
-tracing-subscriber = { version = "0.3.19" }

@@ -42,17 +42,15 @@ dependencies = [
 
 [[package]]
 name = "analytics-collector"
-version = "0.0.3"
+version = "0.0.4-dev"
 dependencies = [
  "anyhow",
  "axum",
  "chrono",
  "jsonschema",
  "libsql",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "prometheus-client",
+ "rust-web-common",
  "serde",
  "serde_json",
  "tokio",
@@ -60,8 +58,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1592,6 +1588,21 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "windows-registry",
+]
+
+[[package]]
+name = "rust-web-common"
+version = "0.1.0"
+source = "git+https://github.com/corybuecker/rust-web-common?branch=main#faea0874535a728370c5255062de6df58ec43637"
+dependencies = [
+ "anyhow",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "thiserror 2.0.12",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
 ]
 
 [[package]]
