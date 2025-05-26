@@ -27,7 +27,7 @@ use tokio::{select, signal::unix::SignalKind};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{Instrument, info_span};
-use utilities::generate_uuid_v4;
+use utilities::{generate_uuid_v4, get_environment_variable_with_default};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -114,7 +114,12 @@ async fn server_handler(connection: Arc<Connection>) {
         // putting the healthcheck route at the end to avoid it being processed by the middleware and logging
         .route("/healthcheck", get(StatusCode::OK));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    let port = get_environment_variable_with_default("PORT", "8000".to_string());
+    let port = port.parse::<u16>().unwrap_or(8000);
+
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
+        .await
+        .unwrap();
 
     axum::serve(listener, app)
         .await
@@ -140,7 +145,11 @@ async fn metrics_server_handler(connection: Arc<Connection>) {
         .with_state((connection, app_id))
         .layer(TraceLayer::new_for_http());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8001").await.unwrap();
+    let port = get_environment_variable_with_default("PORT", "8000".to_string());
+    let port = port.parse::<u16>().unwrap_or(8000) + 1;
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
+        .await
+        .unwrap();
 
     axum::serve(listener, app)
         .await
