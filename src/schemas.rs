@@ -22,7 +22,8 @@ mod tests {
             "entity": "page",
             "action": "view",
             "ts": "2024-05-06T12:00:00Z",
-            "path": "/home"
+            "path": "/home",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(result.is_ok(), "Payload should be valid");
@@ -34,7 +35,8 @@ mod tests {
         let payload = json!({
             "action": "click",
             "ts": "2024-05-06T12:00:00Z",
-            "path": "/about"
+            "path": "/about",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(result.is_err(), "Payload missing entity should be invalid");
@@ -46,7 +48,8 @@ mod tests {
         let payload = json!({
             "entity": "anchor",
             "ts": "2024-05-06T12:00:00Z",
-            "path": "/about"
+            "path": "/about",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(result.is_err(), "Payload missing action should be invalid");
@@ -59,7 +62,8 @@ mod tests {
             "entity": "page",
             "action": "invalid_action",
             "ts": "2024-05-06T12:00:00Z",
-            "path": "/home"
+            "path": "/home",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -75,7 +79,8 @@ mod tests {
             "entity": "invalid_entity",
             "action": "view",
             "ts": "2024-05-06T12:00:00Z",
-            "path": "/home"
+            "path": "/home",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -90,7 +95,8 @@ mod tests {
         let payload = json!({
             "entity": "anchor",
             "action": "click",
-            "extra": "not allowed"
+            "extra": "not allowed",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -104,7 +110,8 @@ mod tests {
         let validator = event_validator().expect("validator should be created");
         let payload = json!({
             "entity": "page",
-            "action": "view"
+            "action": "view",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -118,7 +125,8 @@ mod tests {
         let validator = event_validator().expect("validator should be created");
         let payload = json!({
             "entity": "anchor",
-            "action": "click"
+            "action": "click",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -133,7 +141,8 @@ mod tests {
         let payload = json!({
             "entity": "page",
             "action": "view",
-            "ts": 12345
+            "ts": 12345,
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -148,7 +157,8 @@ mod tests {
         let payload = json!({
             "entity": "anchor",
             "action": "click",
-            "path": 123
+            "path": 123,
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -163,7 +173,8 @@ mod tests {
         let payload = json!({
             "entity": "page",
             "action": "view",
-            "ts": "not-a-date"
+            "ts": "not-a-date",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         // jsonschema crate does not enforce "format": "date-time" by default,
@@ -188,7 +199,8 @@ mod tests {
         let validator = event_validator().expect("validator should be created");
         let payload = json!({
             "entity": "page",
-            "action": "view"
+            "action": "view",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -202,7 +214,8 @@ mod tests {
         let validator = event_validator().expect("validator should be created");
         let payload = json!({
             "entity": "page",
-            "action": "click"
+            "action": "click",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -216,7 +229,8 @@ mod tests {
         let validator = event_validator().expect("validator should be created");
         let payload = json!({
             "entity": "anchor",
-            "action": "click"
+            "action": "click",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -230,7 +244,8 @@ mod tests {
         let validator = event_validator().expect("validator should be created");
         let payload = json!({
             "entity": "anchor",
-            "action": "view"
+            "action": "view",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -243,7 +258,8 @@ mod tests {
     fn test_event_validator_only_entity_present() {
         let validator = event_validator().expect("validator should be created");
         let payload = json!({
-            "entity": "page"
+            "entity": "page",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
@@ -256,12 +272,54 @@ mod tests {
     fn test_event_validator_only_action_present() {
         let validator = event_validator().expect("validator should be created");
         let payload = json!({
-            "action": "view"
+            "action": "view",
+            "appId": "test-app"
         });
         let result = validator.validate(&payload);
         assert!(
             result.is_err(),
             "Payload with only action should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_event_validator_missing_app_id() {
+        let validator = event_validator().expect("validator should be created");
+        let payload = json!({
+            "entity": "page",
+            "action": "view"
+        });
+        let result = validator.validate(&payload);
+        assert!(result.is_err(), "Payload missing appId should be invalid");
+    }
+
+    #[test]
+    fn test_event_validator_non_string_app_id() {
+        let validator = event_validator().expect("validator should be created");
+        let payload = json!({
+            "entity": "anchor",
+            "action": "click",
+            "appId": 12345
+        });
+        let result = validator.validate(&payload);
+        assert!(
+            result.is_err(),
+            "Payload with non-string appId should be invalid"
+        );
+    }
+
+    #[test]
+    fn test_event_validator_valid_app_id() {
+        let validator = event_validator().expect("validator should be created");
+        let payload = json!({
+            "entity": "anchor",
+            "action": "click",
+            "appId": "my-app-id"
+        });
+        let result = validator.validate(&payload);
+        assert!(
+            result.is_ok(),
+            "Payload with valid string appId should be valid"
         );
     }
 }

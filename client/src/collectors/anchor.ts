@@ -1,5 +1,5 @@
 class Anchor {
-    constructor(endpoint: URL) {
+    constructor(endpoint: URL, appId: string) {
         document?.addEventListener("DOMContentLoaded", () => {
             const anchors = document.querySelectorAll("a")
 
@@ -8,7 +8,7 @@ class Anchor {
                     const href = anchor.getAttribute("href")
 
                     if (href) {
-                        navigator.sendBeacon(endpoint.toString(), JSON.stringify({ entity: "anchor", action: "click", path: href }))
+                        navigator.sendBeacon(endpoint.toString(), JSON.stringify({ entity: "anchor", action: "click", path: href, appId }))
                     }
                 });
             });

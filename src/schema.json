@@ -21,11 +21,15 @@
     },
     "path": {
       "type": "string"
+    },
+    "appId": {
+      "type": "string"
     }
   },
   "required": [
     "entity",
-    "action"
+    "action",
+    "appId"
   ],
   "additionalProperties": false,
   "allOf": [
