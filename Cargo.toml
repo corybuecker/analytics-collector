@@ -10,7 +10,7 @@ chrono = { version = "0.4.41" }
 jsonschema = { version = "0.30.0" }
 libsql = { version = "0.9.7", default-features = false, features = ["core"] }
 prometheus-client = { version = "0.23.1" }
-rust-web-common = { git = "https://github.com/corybuecker/rust-web-common", branch = "main" }
+rust-web-common = { git = "https://github.com/corybuecker/rust-web-common", sha = "3c8f83685250b6bfbc911c7fd91b081052bb940f" }
 serde = { version = "1.0.219" }
 serde_json = { version = "1.0.140" }
 tokio = { version = "1.45.0", default-features = false, features = ["rt-multi-thread", "tracing", "macros", "signal"] }
