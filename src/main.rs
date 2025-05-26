@@ -16,17 +16,17 @@ use axum::{
 };
 use chrono::Utc;
 use errors::ApplicationError;
-use exporter::{Exporter, postgresql};
+use exporter::{Exporter, postgresql::PostgresqlExporter};
 use libsql::{Connection, params};
 use middleware::{validate_body_length, validate_content_type};
 use rust_web_common::telemetry::TelemetryBuilder;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use storage::memory::initialize;
-use tokio::{select, signal::unix::SignalKind, sync::RwLock, time::sleep_until};
-use tokio_postgres::{Client, NoTls, connect};
+use tokio::time::{Duration, interval};
+use tokio::{select, signal::unix::SignalKind};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{Instrument, info, info_span};
+use tracing::{Instrument, info_span};
 use utilities::generate_uuid_v4;
 
 #[derive(Clone, Debug)]
@@ -42,18 +42,13 @@ async fn main() {
         .expect("failed to initialize telemetry");
     let memory_database = initialize().await.expect("failed to initialize database");
     let memory_database = Arc::new(memory_database);
-    let postgres_database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
-    let (postgres_client, _) = connect(&postgres_database_url, NoTls)
-        .await
-        .expect("failed to connect to postgres");
-    let postgres_client = Arc::new(RwLock::new(postgres_client));
+    let postgres_exporter = PostgresqlExporter::build().await;
 
     select! {
-        _ = shutdown_handler(memory_database.clone(), postgres_client.clone()) => {}
+        _ = shutdown_handler(memory_database.clone(), postgres_exporter.clone()) => {}
         _ = server_handler(memory_database.clone()) => {}
         _ = metrics_server_handler(memory_database.clone()) => {}
-        _ = database_connection_handler(postgres_client.clone()) => {}
-        _ = flush_to_database(memory_database.clone(), postgres_client.clone()) => {}
+        _ = flush_to_database(memory_database.clone(), postgres_exporter.clone()) => {}
     }
 }
 
@@ -83,24 +78,19 @@ async fn handle_event(
 
 async fn shutdown_handler(
     memory_connection: Arc<libsql::Connection>,
-    postgres_client: Arc<RwLock<Client>>,
+    mut postgresql_exporter: exporter::postgresql::PostgresqlExporter,
 ) {
     let mut signal = tokio::signal::unix::signal(SignalKind::terminate())
         .expect("failed to install SIGTERM handler");
 
     signal.recv().await;
 
-    let exporter = postgresql::PostgresqlExporter {};
-
-    exporter
-        .publish(
-            "test_app".to_string(),
-            memory_connection.clone(),
-            postgres_client.clone(),
-        )
+    postgresql_exporter
+        .publish("test_app".to_string(), memory_connection.clone())
         .await
         .unwrap_or_else(|e| {
             tracing::error!("Failed to flush events to PostgreSQL: {}", e);
+            0
         });
 }
 
@@ -134,10 +124,11 @@ async fn server_handler(connection: Arc<Connection>) {
 async fn generate_metrics(
     State((connection, app_id)): State<(Arc<Connection>, String)>,
 ) -> Result<impl IntoResponse, ApplicationError> {
-    let exporter = exporter::prometheus::PrometheusExporter {};
-    let mut buffer = String::new();
-    exporter.publish(app_id, connection, &mut buffer).await?;
-    Ok((StatusCode::OK, ()))
+    let mut exporter = exporter::prometheus::PrometheusExporter {
+        buffer: &mut String::new(),
+    };
+    exporter.publish(app_id, connection).await?;
+    Ok((StatusCode::OK, exporter.buffer.clone()))
 }
 
 async fn metrics_server_handler(connection: Arc<Connection>) {
@@ -156,47 +147,6 @@ async fn metrics_server_handler(connection: Arc<Connection>) {
         .expect("failed to start server")
 }
 
-async fn database_connection_handler(client: Arc<RwLock<Client>>) {
-    // Get the database URL from the environment variable
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
-
-    loop {
-        // Try to connect to the database
-        let (replacement_client, connection) = match connect(&database_url, NoTls).await {
-            Ok((client, connection)) => {
-                info!("Connected to database");
-                (client, connection)
-            }
-            // If connection fails, log the error and retry after 5 seconds
-            Err(e) => {
-                tracing::error!("Failed to connect to database: {}", e);
-                sleep_until(tokio::time::Instant::now() + Duration::from_secs(5)).await;
-                continue;
-            }
-        };
-
-        // Replace the current client with the new one.
-        // Acquire a write lock on the Arc-wrapped RwLock<Client> to ensure exclusive access,
-        // so that no other task is reading or writing to the client while we update it.
-        let mut guard = client.write().await;
-
-        // Overwrite the existing client with the newly established replacement_client.
-        // This allows the rest of the application to transparently use the new connection
-        // without needing to restart or reinitialize any consumers of the client.
-        *guard = replacement_client;
-
-        // Explicitly drop the guard to release the write lock as soon as possible,
-        // allowing other tasks to acquire the lock and use the updated client.
-        drop(guard);
-
-        // Wait for the connection to finish, log errors if any, and loop to reconnect
-        if let Err(e) = connection.await {
-            tracing::error!("Connection error: {}", e);
-            continue;
-        }
-    }
-}
-
 /// Periodically flushes all events from the in-memory database to the PostgreSQL instance.
 ///
 /// # Arguments
@@ -204,25 +154,19 @@ async fn database_connection_handler(client: Arc<RwLock<Client>>) {
 /// * `postgres_client` - Arc pointer to a RwLock-wrapped tokio_postgres::Client
 async fn flush_to_database(
     memory_connection: Arc<libsql::Connection>,
-    postgres_client: Arc<RwLock<Client>>,
+    mut postgresql_exporter: exporter::postgresql::PostgresqlExporter,
 ) {
-    use tokio::time::{Duration, interval};
-
     let mut interval = interval(Duration::from_secs(10)); // flush every 10 seconds
-    let exporter = postgresql::PostgresqlExporter {};
 
     loop {
         interval.tick().await;
 
-        exporter
-            .publish(
-                "test_app".to_string(),
-                memory_connection.clone(),
-                postgres_client.clone(),
-            )
+        postgresql_exporter
+            .publish("analytics-collector".to_string(), memory_connection.clone())
             .await
             .unwrap_or_else(|e| {
                 tracing::error!("Failed to flush events to PostgreSQL: {}", e);
+                0
             });
     }
 }
