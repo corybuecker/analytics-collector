@@ -129,7 +129,7 @@ impl Exporter for PostgresqlExporter {
             return Ok(0);
         }
         // Insert events into PostgreSQL
-        let client = self.client.clone().expect("test");
+        let client = self.client.clone().expect("PostgreSQL client is unexpectedly absent. Ensure the client is properly initialized.");
         let client = client.read().await;
         for (id, recorded_at, event) in &events {
             if let Err(e) = client
