@@ -13,7 +13,8 @@ use std::sync::Arc;
 struct Event {
     entity: String,
     action: String,
-    app_id: Option<String>,
+    app_id: String,
+    instance_id: Option<String>,
     path: Option<String>,
 }
 
@@ -24,7 +25,7 @@ pub struct PrometheusExporter<'a> {
 impl Exporter for PrometheusExporter<'_> {
     async fn publish(
         &mut self,
-        app_id: String,
+        instance_id: String,
         connection: Arc<libsql::Connection>,
     ) -> Result<usize> {
         let mut registry = Registry::default();
@@ -40,7 +41,7 @@ impl Exporter for PrometheusExporter<'_> {
         while let Some(row) = results.next().await? {
             let event: String = row.get(0)?;
             if let Ok(mut event) = serde_json::from_str::<Event>(&event) {
-                event.app_id = Some(app_id.clone());
+                event.instance_id = Some(instance_id.clone());
                 counter.get_or_create(&event).inc();
             }
         }
@@ -75,24 +76,24 @@ mod tests {
     #[tokio::test]
     async fn test_publish_counts_events() {
         let events = vec![
-            r#"{"entity":"signup","action":"page_view","path":"/"}"#,
-            r#"{"entity":"signup","action":"page_view","path":"/"}"#,
-            r#"{"entity":"login","action":"click","path":"/login"}"#,
+            r#"{"entity":"signup","action":"page_view","path":"/","app_id":"test-app"}"#,
+            r#"{"entity":"signup","action":"page_view","path":"/","app_id":"test-app"}"#,
+            r#"{"entity":"login","action":"click","path":"/login","app_id":"test-app"}"#,
         ];
         let conn = setup_db_with_events(events).await;
-        let app_id = "test-app".to_string();
+        let instance_id = "test-app".to_string();
         let mut buffer = String::new();
         let mut exporter = PrometheusExporter {
             buffer: &mut buffer,
         };
-        exporter.publish(app_id.clone(), conn).await.unwrap();
+        exporter.publish(instance_id.clone(), conn).await.unwrap();
 
         // Should contain entity, action, path, and app_id as labels
         assert!(buffer.contains("entity=\"signup\""));
         assert!(buffer.contains("entity=\"login\""));
         assert!(buffer.contains("action=\"page_view\""));
         assert!(buffer.contains("action=\"click\""));
-        assert!(buffer.contains("app_id=\"test-app\""));
+        assert!(buffer.contains("instance_id=\"test-app\""));
         assert!(buffer.contains("path=\"/\""));
         assert!(buffer.contains("path=\"/login\""));
 
@@ -136,9 +137,9 @@ mod tests {
     #[tokio::test]
     async fn test_publish_ignores_invalid_json() {
         let events = vec![
-            r#"{"entity":"signup", "action": "click"}"#,
+            r#"{"entity":"signup", "action": "click", "app_id": "bad-json"}"#,
             r#"not a json"#,
-            r#"{"entity":"signup", "action": "click"}"#,
+            r#"{"entity":"signup", "action": "click", "app_id": "bad-json"}"#,
         ];
         let conn = setup_db_with_events(events).await;
         let app_id = "bad-json".to_string();

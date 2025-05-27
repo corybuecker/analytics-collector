@@ -1,13 +1,7 @@
 use anyhow::Result;
 use libsql::{Builder, Connection};
 
-pub const SCHEMA: &str = r#"
-CREATE TABLE events (
-    id TEXT PRIMARY KEY NOT NULL,
-    recorded_at TEXT NOT NULL,
-    event TEXT NOT NULL
-);
-"#;
+use super::SCHEMA;
 
 pub async fn initialize() -> Result<Connection> {
     let memory_database = Builder::new_local(":memory:")
