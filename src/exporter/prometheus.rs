@@ -13,6 +13,7 @@ use std::sync::Arc;
 struct Event {
     entity: String,
     action: String,
+    #[serde(rename = "appId")]
     app_id: String,
     instance_id: Option<String>,
     path: Option<String>,
@@ -76,9 +77,9 @@ mod tests {
     #[tokio::test]
     async fn test_publish_counts_events() {
         let events = vec![
-            r#"{"entity":"signup","action":"page_view","path":"/","app_id":"test-app"}"#,
-            r#"{"entity":"signup","action":"page_view","path":"/","app_id":"test-app"}"#,
-            r#"{"entity":"login","action":"click","path":"/login","app_id":"test-app"}"#,
+            r#"{"entity":"signup","action":"page_view","path":"/","appId":"test-app"}"#,
+            r#"{"entity":"signup","action":"page_view","path":"/","appId":"test-app"}"#,
+            r#"{"entity":"login","action":"click","path":"/login","appId":"test-app"}"#,
         ];
         let conn = setup_db_with_events(events).await;
         let instance_id = "test-app".to_string();
@@ -137,9 +138,9 @@ mod tests {
     #[tokio::test]
     async fn test_publish_ignores_invalid_json() {
         let events = vec![
-            r#"{"entity":"signup", "action": "click", "app_id": "bad-json"}"#,
+            r#"{"entity":"signup", "action": "click", "appId": "bad-json"}"#,
             r#"not a json"#,
-            r#"{"entity":"signup", "action": "click", "app_id": "bad-json"}"#,
+            r#"{"entity":"signup", "action": "click", "appId": "bad-json"}"#,
         ];
         let conn = setup_db_with_events(events).await;
         let app_id = "bad-json".to_string();

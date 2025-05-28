@@ -1,6 +1,6 @@
 {
   "name": "@corybuecker/analytics-collector",
-  "version": "0.0.6-dev",
+  "version": "0.0.7-dev",
   "license": "Unlicense",
   "type": "module",
   "devDependencies": {
@@ -15,7 +15,8 @@
   "homepage": "https://github.com/corybuecker/analytics-collector",
   "scripts": {
     "build": "rm -rf lib dist && tsc",
-    "build:watch": "nodemon --watch src --ext ts --exec 'npm run build'"
+    "build:watch": "nodemon --watch src --ext ts --exec 'npm run build'",
+    "prepublish": "npm run build"
   },
   "exports": {
     ".": {
@@ -24,5 +25,8 @@
         "default": "./lib/index.js"
       }
     }
-  }
+  },
+  "files": [
+    "lib"
+  ]
 }
