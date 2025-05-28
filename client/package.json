@@ -1,6 +1,6 @@
 {
   "name": "@corybuecker/analytics-collector",
-  "version": "0.0.6-dev",
+  "version": "0.0.7-dev",
   "license": "Unlicense",
   "type": "module",
   "devDependencies": {
@@ -24,5 +24,8 @@
         "default": "./lib/index.js"
       }
     }
-  }
+  },
+  "files": [
+    "lib"
+  ]
 }
