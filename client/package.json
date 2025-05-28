@@ -15,8 +15,7 @@
   "homepage": "https://github.com/corybuecker/analytics-collector",
   "scripts": {
     "build": "rm -rf lib dist && tsc",
-    "build:watch": "nodemon --watch src --ext ts --exec 'npm run build'",
-    "prepublish": "npm run build"
+    "build:watch": "nodemon --watch src --ext ts --exec 'npm run build'"
   },
   "exports": {
     ".": {
