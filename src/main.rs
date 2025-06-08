@@ -42,7 +42,9 @@ async fn main() {
         .expect("failed to initialize telemetry");
     let memory_database = initialize().await.expect("failed to initialize database");
     let memory_database = Arc::new(memory_database);
-    let postgres_exporter = PostgresqlExporter::build().await;
+    let postgres_exporter = PostgresqlExporter::build()
+        .await
+        .expect("failed to initialize PostgreSQL exporter");
 
     select! {
         _ = shutdown_handler(memory_database.clone(), postgres_exporter.clone()) => {}

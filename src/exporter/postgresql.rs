@@ -1,82 +1,33 @@
 use super::Exporter;
 use anyhow::Result;
-use std::{sync::Arc, time::Duration};
-use tokio::{spawn, sync::RwLock, time::sleep_until};
-use tokio_postgres::{Client, NoTls, connect};
-use tracing::{error, info};
+use rust_database_common::DatabasePool;
+use std::sync::Arc;
+use tracing::{debug, error, info};
 
 #[derive(Debug, Clone)]
 pub struct PostgresqlExporter {
-    pub client: Option<Arc<RwLock<Client>>>,
+    pub database_pool: Option<DatabasePool>,
     pub enabled: bool,
 }
 
 impl PostgresqlExporter {
-    pub async fn build() -> Self {
+    pub async fn build() -> Result<Self> {
         let database_url = std::env::var("DATABASE_URL").ok();
 
-        if database_url.is_none() {
-            info!("PostgreSQL exporter is disabled, skipping initialization.");
-            return Self {
-                client: None,
+        match database_url {
+            Some(url) => {
+                let mut database_pool = DatabasePool::new(url);
+                database_pool.connect().await?;
+                debug!("PostgreSQL exporter initialized with live database");
+                Ok(Self {
+                    database_pool: Some(database_pool),
+                    enabled: true,
+                })
+            }
+            None => Ok(Self {
+                database_pool: None,
                 enabled: false,
-            };
-        }
-
-        let database_url = database_url.expect("DATABASE_URL must be set");
-
-        let (client, _connection) = connect(&database_url, NoTls)
-            .await
-            .expect("Failed to connect to PostgreSQL");
-        let client = Arc::new(RwLock::new(client));
-
-        let moved_client = client.clone();
-        spawn(async move { database_connection_handler(moved_client).await });
-
-        Self {
-            client: Some(client),
-            enabled: true,
-        }
-    }
-}
-
-async fn database_connection_handler(client: Arc<RwLock<Client>>) {
-    // Get the database URL from the environment variable
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
-
-    loop {
-        // Try to connect to the database
-        let (replacement_client, connection) = match connect(&database_url, NoTls).await {
-            Ok((client, connection)) => {
-                info!("Connected to database");
-                (client, connection)
-            }
-            // If connection fails, log the error and retry after 5 seconds
-            Err(e) => {
-                tracing::error!("Failed to connect to database: {}", e);
-                sleep_until(tokio::time::Instant::now() + Duration::from_secs(5)).await;
-                continue;
-            }
-        };
-
-        // Replace the current client with the new one.
-        // Acquire a write lock on the Arc-wrapped RwLock<Client> to ensure exclusive access,
-        // so that no other task is reading or writing to the client while we update it.
-        let mut guard = client.write().await;
-
-        // Overwrite the existing client with the newly established replacement_client.
-        // This allows the rest of the application to transparently use the new connection
-        // without needing to restart or reinitialize any consumers of the client.
-        *guard = replacement_client;
-
-        // Explicitly drop the guard to release the write lock as soon as possible,
-        // allowing other tasks to acquire the lock and use the updated client.
-        drop(guard);
-
-        // Wait for the connection to finish, log errors if any, and loop to reconnect
-        if let Err(e) = connection.await {
-            error!("Connection error: {}", e);
-            continue;
+            }),
         }
     }
 }
@@ -128,11 +79,14 @@ impl Exporter for PostgresqlExporter {
         if events.is_empty() {
             return Ok(0);
         }
-        // Insert events into PostgreSQL
-        let client = self.client.clone().expect(
-            "PostgreSQL client is unexpectedly absent. Ensure the client is properly initialized.",
-        );
-        let client = client.read().await;
+
+        let client = self
+            .database_pool
+            .clone()
+            .expect("could not get database connection")
+            .get_client()
+            .await?;
+
         for (id, recorded_at, event) in &events {
             if let Err(e) = client
                 .execute(
