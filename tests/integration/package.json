@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "@corybuecker/analytics-collector": "file:../../client",
+    "esbuild": "^0.25.5",
+    "serve": "^14.2.4"
+  },
+  "scripts": {
+    "start": "serve -p 9000 -s public",
+    "build": "nodemon --watch src --ext ts --exec 'esbuild src/index.ts --bundle --outfile=public/bundle.js --platform=browser --format=esm --sourcemap'"
+  },
+  "type": "module"
+}
