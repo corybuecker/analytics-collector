@@ -87,20 +87,103 @@ impl Exporter for PostgresqlExporter {
             .get_client()
             .await?;
 
-        for (id, recorded_at, event) in &events {
-            if let Err(e) = client
-                .execute(
-                    "INSERT INTO events (id, recorded_at, event) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
-                    &[id, recorded_at, event],
-                )
-                .await
-            {
-                error!("Failed to insert event into postgres: {}", e);
+        // Batch insert
+        let batch_size = 1000;
+        for chunk in events.chunks(batch_size) {
+            // Build the VALUES part of the query dynamically
+            let mut values = Vec::new();
+            let mut params: Vec<&(dyn rust_database_common::ToSql + Sync)> = Vec::new();
+            for (i, (id, recorded_at, event)) in chunk.iter().enumerate() {
+                let base = i * 3;
+                values.push(format!("(${}, ${}, ${})", base + 1, base + 2, base + 3));
+                params.push(id);
+                params.push(recorded_at);
+                params.push(event);
+            }
+            let query = format!(
+                "INSERT INTO events (id, recorded_at, event) VALUES {} ON CONFLICT (id) DO NOTHING",
+                values.join(", ")
+            );
+            if let Err(e) = client.execute(query.as_str(), &params).await {
+                error!("Failed to batch insert events into postgres: {}", e);
             }
         }
 
         info!("Flushed {} events to PostgreSQL", events.len());
 
         Ok(events.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::memory;
+    use libsql::Connection;
+    use tokio;
+
+    async fn setup_memory_db() -> Arc<Connection> {
+        let conn = memory::initialize().await.unwrap();
+        Arc::new(conn)
+    }
+
+    async fn insert_event(conn: &Connection, id: &str, recorded_at: &str, event: &str) {
+        conn.execute(
+            "INSERT INTO events (id, recorded_at, event) VALUES (?, ?, ?)",
+            libsql::params![id, recorded_at, event],
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_publish_flushes_events_to_postgres() {
+        // Set up memory db and insert events
+        let memory_conn = setup_memory_db().await;
+        insert_event(&memory_conn, "1", "2024-01-01T00:00:00Z", "event1").await;
+        insert_event(&memory_conn, "2", "2024-01-01T01:00:00Z", "event2").await;
+
+        let mut exporter = PostgresqlExporter::build().await.unwrap();
+        assert!(exporter.enabled);
+
+        // Clean up events table in Postgres before test
+        let pool = exporter.database_pool.as_ref().unwrap();
+        let client = pool.get_client().await.unwrap();
+        client
+            .execute("DELETE FROM events WHERE id IN ($1, $2)", &[&"1", &"2"])
+            .await
+            .unwrap();
+
+        // Publish events
+        let count = exporter
+            .publish("test_app".to_string(), memory_conn.clone())
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+
+        // Check events in Postgres
+        let rows = client
+            .query(
+                "SELECT id, recorded_at, event FROM events WHERE id IN ($1, $2) ORDER BY id",
+                &[&"1", &"2"],
+            )
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get::<_, String>(0), "1");
+        assert_eq!(rows[0].get::<_, String>(2), "event1");
+        assert_eq!(rows[1].get::<_, String>(0), "2");
+        assert_eq!(rows[1].get::<_, String>(2), "event2");
+    }
+
+    #[tokio::test]
+    async fn test_publish_no_events() {
+        let memory_conn = setup_memory_db().await;
+        let mut exporter = PostgresqlExporter::build().await.unwrap();
+        let count = exporter
+            .publish("test_app".to_string(), memory_conn.clone())
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }
