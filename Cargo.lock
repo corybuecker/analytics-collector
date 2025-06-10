@@ -1632,7 +1632,7 @@ dependencies = [
 [[package]]
 name = "rust-database-common"
 version = "0.1.0"
-source = "git+https://github.com/corybuecker/rust-database-common?branch=main#ea09089b40ac577f58b61f82e6a7aaa6a2cf30fa"
+source = "git+https://github.com/corybuecker/rust-database-common?branch=main#a450a75b1063f5090e602a7d731af6b34290a9d5"
 dependencies = [
  "deadpool-postgres",
  "thiserror 2.0.12",
