@@ -2,7 +2,7 @@ use super::Exporter;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use libsql::params;
-use rust_database_common::DatabasePool;
+use rust_database_common::{Client, DatabasePool};
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -32,27 +32,12 @@ impl PostgresqlExporter {
             }),
         }
     }
-}
 
-impl Exporter for PostgresqlExporter {
-    async fn publish(
-        &mut self,
-        app_id: String,
-        memory_connection: Arc<libsql::Connection>,
-    ) -> Result<usize> {
-        if !self.enabled {
-            tracing::info!("PostgreSQL exporter is disabled, skipping flush.");
-            return Ok(0);
-        }
-
-        // Get the most recent recorded_at from the destination database
-        let client = self
-            .database_pool
-            .clone()
-            .expect("could not get database connection")
-            .get_client()
-            .await?;
-
+    async fn fetch_latest_recorded_at(
+        &self,
+        client: &Client,
+        app_id: &str,
+    ) -> Option<DateTime<Utc>> {
         let latest_recorded_at: Option<String> = match client
             .query_opt(
                 "SELECT MAX(recorded_at) FROM events WHERE app_id = $1",
@@ -66,18 +51,18 @@ impl Exporter for PostgresqlExporter {
                 None
             }
         };
-        let latest_recorded_at_dt: Option<DateTime<Utc>> = latest_recorded_at
+        latest_recorded_at
             .as_ref()
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc));
+            .map(|dt| dt.with_timezone(&Utc))
+    }
 
-        debug!(
-            "Latest recorded_at for app_id {}: {:?}",
-            app_id, latest_recorded_at_dt
-        );
-
-        // Prepare select statement with or without filter
-        let (query, params) = if let Some(ref latest_dt) = latest_recorded_at_dt {
+    async fn fetch_new_events(
+        &self,
+        memory_connection: &libsql::Connection,
+        latest_recorded_at_dt: Option<&DateTime<Utc>>,
+    ) -> Vec<(String, String, String)> {
+        let (query, params) = if let Some(latest_dt) = latest_recorded_at_dt {
             (
                 "SELECT id, recorded_at, event FROM events where recorded_at > ?".to_string(),
                 params![latest_dt.to_rfc3339()],
@@ -93,14 +78,14 @@ impl Exporter for PostgresqlExporter {
             Ok(stmt) => stmt,
             Err(e) => {
                 error!("Failed to prepare statement: {}", e);
-                return Ok(0);
+                return Vec::new();
             }
         };
         let mut rows: libsql::Rows = match stmt.query(params).await {
             Ok(rows) => rows,
             Err(e) => {
                 error!("Failed to query events from memory db: {}", e);
-                return Ok(0);
+                return Vec::new();
             }
         };
         let mut events = Vec::new();
@@ -119,16 +104,18 @@ impl Exporter for PostgresqlExporter {
                 }
             }
         }
+        events
+    }
 
-        if events.is_empty() {
-            return Ok(0);
-        }
-
-        // Batch insert
+    async fn batch_insert_events(
+        &self,
+        client: &Client,
+        events: &[(String, String, String)],
+        app_id: &str,
+    ) {
         let batch_size = 100;
-        let local_app_id = app_id.clone();
+        let app_id = app_id.to_string();
         for chunk in events.chunks(batch_size) {
-            // Build the VALUES part of the query dynamically
             let mut values = Vec::new();
             let mut params: Vec<&(dyn rust_database_common::ToSql + Sync)> = Vec::new();
             for (i, (id, recorded_at, event)) in chunk.iter().enumerate() {
@@ -143,9 +130,8 @@ impl Exporter for PostgresqlExporter {
                 params.push(id);
                 params.push(recorded_at);
                 params.push(event);
-                params.push(&local_app_id);
+                params.push(&app_id);
             }
-
             let query = format!(
                 "INSERT INTO events (id, recorded_at, event, app_id) VALUES {} ON CONFLICT (id) DO NOTHING",
                 values.join(", ")
@@ -154,9 +140,43 @@ impl Exporter for PostgresqlExporter {
                 error!("Failed to batch insert events into postgres: {}", e);
             }
         }
+    }
+}
 
+impl Exporter for PostgresqlExporter {
+    async fn publish(
+        &mut self,
+        app_id: String,
+        memory_connection: Arc<libsql::Connection>,
+    ) -> Result<usize> {
+        if !self.enabled {
+            tracing::info!("PostgreSQL exporter is disabled, skipping flush.");
+            return Ok(0);
+        }
+
+        let client: rust_database_common::Client = self
+            .database_pool
+            .clone()
+            .expect("could not get database connection")
+            .get_client()
+            .await?;
+
+        let latest_recorded_at_dt = self.fetch_latest_recorded_at(&client, &app_id).await;
+        debug!(
+            "Latest recorded_at for app_id {}: {:?}",
+            app_id, latest_recorded_at_dt
+        );
+
+        let events = self
+            .fetch_new_events(&memory_connection, latest_recorded_at_dt.as_ref())
+            .await;
+
+        if events.is_empty() {
+            return Ok(0);
+        }
+
+        self.batch_insert_events(&client, &events, &app_id).await;
         info!("Flushed {} events to PostgreSQL", events.len());
-
         Ok(events.len())
     }
 }
