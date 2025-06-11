@@ -66,11 +66,23 @@ async fn handle_event(
         .validate(&json_payload)
         .map_err(|e| ApplicationError::InvalidPayload(e.to_string()))?;
 
+    let recorded_by = json_payload
+        .get("appId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            ApplicationError::InvalidPayload("Missing 'recorded_by' field".to_string())
+        })?;
+
     state
         .connection
         .execute(
-            "INSERT INTO events (id, recorded_at, event) VALUES (?1, ?2, ?3)",
-            params!(generate_uuid_v4(), Utc::now().to_rfc3339(), payload),
+            "INSERT INTO events (id, recorded_at, recorded_by, event) VALUES (?1, ?2, ?3, ?4)",
+            params!(
+                generate_uuid_v4(),
+                Utc::now().to_rfc3339(),
+                recorded_by,
+                payload
+            ),
         )
         .instrument(info_span!("insert_event"))
         .await?;
@@ -88,7 +100,7 @@ async fn shutdown_handler(
     signal.recv().await;
 
     postgresql_exporter
-        .publish("test_app".to_string(), memory_connection.clone())
+        .publish(None, memory_connection.clone())
         .await
         .unwrap_or_else(|e| {
             tracing::error!("Failed to flush events to PostgreSQL: {}", e);
@@ -129,12 +141,12 @@ async fn server_handler(connection: Arc<Connection>) {
 }
 
 async fn generate_metrics(
-    State((connection, app_id)): State<(Arc<Connection>, String)>,
+    State((connection, instance_id)): State<(Arc<Connection>, String)>,
 ) -> Result<impl IntoResponse, ApplicationError> {
     let mut exporter = exporter::prometheus::PrometheusExporter {
         buffer: &mut String::new(),
     };
-    exporter.publish(app_id, connection).await?;
+    exporter.publish(Some(instance_id), connection).await?;
     Ok((StatusCode::OK, exporter.buffer.clone()))
 }
 
@@ -173,7 +185,7 @@ async fn flush_to_database(
         interval.tick().await;
 
         postgresql_exporter
-            .publish("analytics-collector".to_string(), memory_connection.clone())
+            .publish(None, memory_connection.clone())
             .await
             .unwrap_or_else(|e| {
                 tracing::error!("Failed to flush events to PostgreSQL: {}", e);
