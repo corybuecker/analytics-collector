@@ -9,7 +9,7 @@ RUN touch /build/src/main.rs
 RUN cargo build --release
 RUN cp /build/target/release/analytics-collector /build/analytics-collector
 
-FROM debian@sha256:bd73076dc2cd9c88f48b5b358328f24f2a4289811bd73787c031e20db9f97123
+FROM debian@sha256:0d8498a0e9e6a60011df39aab78534cfe940785e7c59d19dfae1eb53ea59babe
 RUN mkdir -p /opt/analytics-collector
 WORKDIR /opt/analytics-collector
 COPY --from=backend_builder /build/analytics-collector /opt/analytics-collector/
