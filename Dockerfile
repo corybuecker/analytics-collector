@@ -1,4 +1,4 @@
-FROM rust@sha256:25038aa450210c53cf05dbf7b256e1df1ee650a58bb46cbc7d6fa79c1d98d083 AS backend_builder
+FROM rust@sha256:251cec8da4689d180f124ef00024c2f83f79d9bf984e43c180a598119e326b84 AS backend_builder
 RUN mkdir -p /build/src
 WORKDIR /build
 COPY Cargo.lock Cargo.toml /build/
