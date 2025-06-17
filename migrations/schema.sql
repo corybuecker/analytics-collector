@@ -29,8 +29,7 @@ CREATE TABLE public.events (
     id text NOT NULL,
     recorded_at text NOT NULL,
     event text NOT NULL,
-    app_id text,
-    recorded_by text
+    recorded_by text NOT NULL
 );
 
 
