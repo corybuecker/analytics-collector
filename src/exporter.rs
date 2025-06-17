@@ -5,5 +5,9 @@ use anyhow::Result;
 use std::sync::Arc;
 
 pub trait Exporter {
-    async fn publish(&mut self, app_id: String, source: Arc<libsql::Connection>) -> Result<usize>;
+    async fn publish(
+        &mut self,
+        exporter_identifier: Option<String>,
+        source: Arc<libsql::Connection>,
+    ) -> Result<usize>;
 }

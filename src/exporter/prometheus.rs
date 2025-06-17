@@ -26,7 +26,7 @@ pub struct PrometheusExporter<'a> {
 impl Exporter for PrometheusExporter<'_> {
     async fn publish(
         &mut self,
-        instance_id: String,
+        instance_id: Option<String>,
         connection: Arc<libsql::Connection>,
     ) -> Result<usize> {
         let mut registry = Registry::default();
@@ -42,7 +42,7 @@ impl Exporter for PrometheusExporter<'_> {
         while let Some(row) = results.next().await? {
             let event: String = row.get(0)?;
             if let Ok(mut event) = serde_json::from_str::<Event>(&event) {
-                event.instance_id = Some(instance_id.clone());
+                event.instance_id = instance_id.clone();
                 counter.get_or_create(&event).inc();
             }
         }
@@ -65,8 +65,8 @@ mod tests {
         for event in events {
             connection
                 .execute(
-                    "INSERT INTO events (id, event, recorded_at) VALUES (?1, ?2, ?3)",
-                    params![generate_uuid_v4(), event, Utc::now().to_rfc3339()],
+                    "INSERT INTO events (id, event, recorded_at, recorded_by) VALUES (?1, ?2, ?3, ?4)",
+                    params![generate_uuid_v4(), event, Utc::now().to_rfc3339(), generate_uuid_v4()],
                 )
                 .await
                 .unwrap();
@@ -82,7 +82,7 @@ mod tests {
             r#"{"entity":"login","action":"click","path":"/login","appId":"test-app"}"#,
         ];
         let conn = setup_db_with_events(events).await;
-        let instance_id = "test-app".to_string();
+        let instance_id = Some("test-app".to_string());
         let mut buffer = String::new();
         let mut exporter = PrometheusExporter {
             buffer: &mut buffer,
@@ -123,13 +123,13 @@ mod tests {
     #[tokio::test]
     async fn test_publish_handles_empty_table() {
         let conn = setup_db_with_events(vec![]).await;
-        let app_id = "empty-app".to_string();
+        let instance_id = "empty-app".to_string();
 
         let mut buffer = String::new();
         let mut exporter = PrometheusExporter {
             buffer: &mut buffer,
         };
-        exporter.publish(app_id, conn).await.unwrap();
+        exporter.publish(Some(instance_id), conn).await.unwrap();
         // Should still output valid Prometheus format, but no event lines
         assert!(buffer.contains("# TYPE events counter"));
         assert!(!buffer.contains("entity="));
@@ -143,12 +143,12 @@ mod tests {
             r#"{"entity":"signup", "action": "click", "appId": "bad-json"}"#,
         ];
         let conn = setup_db_with_events(events).await;
-        let app_id = "bad-json".to_string();
+        let instance_id = "bad-json".to_string();
         let mut buffer = String::new();
         let mut exporter = PrometheusExporter {
             buffer: &mut buffer,
         };
-        exporter.publish(app_id, conn).await.unwrap();
+        exporter.publish(Some(instance_id), conn).await.unwrap();
         // Only two valid events should be counted
         let signup_count = buffer
             .lines()
