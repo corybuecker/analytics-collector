@@ -1,7 +1,7 @@
 {
   "name": "@corybuecker/analytics-collector",
-  "version": "0.0.8-dev",
-  "license": "Unlicense",
+  "version": "0.1.1",
+  "license": "MIT",
   "type": "module",
   "devDependencies": {
     "esbuild": "^0.25.5",
