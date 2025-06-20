@@ -92,4 +92,4 @@ lib/
 dist/
 types/
 
-public/bundle.js*
+test-results
