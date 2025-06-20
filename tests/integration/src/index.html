@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Untitled</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+
+<body>
+    <!--
+    Import map generated with JSPM Generator
+    Edit here: https://generator.jspm.io/#U2VhYGBkDM0rySzJSU1hcEjOL6pMKk1Nzk4t0k/MS8ypLMlMLtZNzs/JSU0uyS9yMNAz1DMEANn/n1c1AA
+  -->
+    <script type="importmap">
+  {
+    "imports": {
+      "@corybuecker/analytics-collector": "https://ga.jspm.io/npm:@corybuecker/analytics-collector@0.1.1/lib/index.js"
+    }
+  }
+  </script>
+    <script defer type="module">
+        import AnalyticsCollector from "@corybuecker/analytics-collector";
+
+        const collector = AnalyticsCollector.initialize('http://localhost:31003', 'integration-tests');
+        collector.start();
+    </script>
+</body>
+
+</html>
