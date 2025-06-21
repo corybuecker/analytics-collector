@@ -93,3 +93,4 @@ dist/
 types/
 
 test-results
+src/build.js
