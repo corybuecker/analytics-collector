@@ -1,7 +1,8 @@
 import Anchor from "./collectors/anchor";
 import PageView from "./collectors/page_view";
+import TurboDrive from "./collectors/turbo_drive";
 
-type Options = {
+type InitializeOptions = {
   endpoint: URL,
   appId: string,
 }
@@ -20,7 +21,7 @@ class AnalyticsCollector {
     return new AnalyticsCollector({ endpoint: endpointURL, appId })
   }
 
-  private constructor(options: Options) {
+  private constructor(options: InitializeOptions) {
     this.endpoint = options.endpoint
     this.appId = options.appId
   }
@@ -28,6 +29,7 @@ class AnalyticsCollector {
   public start(): void {
     new PageView(this.endpoint, this.appId)
     new Anchor(this.endpoint, this.appId)
+    new TurboDrive(this.endpoint, this.appId)
   }
 }
 
