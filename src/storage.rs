@@ -1,3 +1,4 @@
+pub mod google_storage;
 pub mod memory;
 
 pub const SCHEMA: &str = r#"

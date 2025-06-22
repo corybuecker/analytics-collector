@@ -6,7 +6,7 @@ metadata:
   labels:
     app: analytics-collector
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: analytics-collector
@@ -15,7 +15,16 @@ spec:
       labels:
         app: analytics-collector
     spec:
+      serviceAccountName: analytics-collector
       automountServiceAccountToken: false
+      volumes:
+        - name: service-account-token-volume
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: patch-target
+                  expirationSeconds: 3600
+                  path: token
       containers:
         - name: analytics-collector
           image: analytics-collector
@@ -51,3 +60,7 @@ spec:
               path: /healthcheck
               port: http
             periodSeconds: 10
+          volumeMounts:
+            - name: service-account-token-volume
+              mountPath: "/service-account"
+              readOnly: true
