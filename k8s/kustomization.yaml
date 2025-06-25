@@ -4,16 +4,22 @@ kind: Kustomization
 images:
   - name: analytics-collector
     newName: ghcr.io/corybuecker/analytics-collector
-    digest: sha256:38f86b9e5ce7947ec3b47884d00303c6d5f672c9b3f75d027f564b9d75adfc20
+    digest: sha256:68f1ddb8ae15b4bea2e8e0a6410a8c823f28658e90e34a60a61d823051f97992
 
 resources:
   - namespace.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml
+  - service-account.yaml
 
 secretGenerator:
   - name: analytics-collector
     namespace: analytics-collector
     envs:
       - .env
+
+patches:
+  - path: ./patches/deployment.yaml
+    target:
+      kind: Deployment
