@@ -1650,7 +1650,7 @@ dependencies = [
 [[package]]
 name = "rust-web-common"
 version = "0.1.0"
-source = "git+https://github.com/corybuecker/rust-web-common?branch=main#ab1236b923f90fdcab79b000ae275e19e8de0002"
+source = "git+https://github.com/corybuecker/rust-web-common?branch=main#c4155497f43df9e784af1fffaede70a0cc8b208e"
 dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
