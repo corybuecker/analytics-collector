@@ -1640,7 +1640,7 @@ dependencies = [
 [[package]]
 name = "rust-database-common"
 version = "0.1.0"
-source = "git+https://github.com/corybuecker/rust-database-common?branch=main#123faebcb0d1d34fd1f3c06342cee9be092396e3"
+source = "git+https://github.com/corybuecker/rust-database-common?branch=main#710d5b30b96fcb7bafe70deb5a91454997c2755e"
 dependencies = [
  "deadpool-postgres",
  "thiserror 2.0.12",
@@ -1650,7 +1650,7 @@ dependencies = [
 [[package]]
 name = "rust-web-common"
 version = "0.1.0"
-source = "git+https://github.com/corybuecker/rust-web-common?branch=main#ab1236b923f90fdcab79b000ae275e19e8de0002"
+source = "git+https://github.com/corybuecker/rust-web-common?branch=main#c4155497f43df9e784af1fffaede70a0cc8b208e"
 dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
