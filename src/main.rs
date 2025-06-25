@@ -1,37 +1,78 @@
 mod errors;
 mod exporter;
 mod middleware;
+mod responses;
 mod schemas;
 mod storage;
 mod utilities;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use axum::{
     Router,
-    extract::State,
     http::StatusCode,
     middleware::from_fn,
-    response::IntoResponse,
     routing::{get, post},
 };
-use chrono::Utc;
-use errors::ApplicationError;
 use exporter::{Exporter, postgresql::PostgresqlExporter};
-use libsql::{Connection, params};
+use libsql::Connection;
 use middleware::{validate_body_length, validate_content_type};
+use responses::{get_metrics, post_event};
 use rust_web_common::telemetry::TelemetryBuilder;
-use std::sync::Arc;
-use storage::memory::initialize;
-use tokio::time::{Duration, interval};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use storage::{google_storage::GoogleStorageClient, memory::initialize};
 use tokio::{select, signal::unix::SignalKind};
+use tokio::{
+    spawn,
+    time::{Duration, interval},
+};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{Instrument, info_span};
-use utilities::{generate_uuid_v4, get_environment_variable_with_default};
+use tracing::info;
+use utilities::{
+    generate_uuid_v4, get_environment_variable_with_default, google_auth::WorkloadIdentityConfig,
+};
 
+/// Application state shared across HTTP request handlers.
+///
+/// This struct contains the core dependencies needed by the analytics collector service,
+/// including database connectivity and JSON schema validation capabilities. It is designed
+/// to be efficiently cloned across async tasks using `Arc` for shared ownership.
+///
+/// # Fields
+///
+/// * `connection` - Thread-safe reference to the LibSQL database connection used for
+///   storing analytics events in the in-memory database
+/// * `validator` - Thread-safe reference to the JSON schema validator used to validate
+///   incoming event payloads against the expected schema
+///
+/// # Usage
+///
+/// The `AppState` is typically passed to Axum route handlers via the `State` extractor:
+///
+/// ```rust,ignore
+/// async fn handle_event(
+///     State(state): State<AppState>,
+///     payload: String,
+/// ) -> Result<impl IntoResponse, ApplicationError> {
+///     // Use state.connection for database operations
+///     // Use state.validator for payload validation
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct AppState {
+    /// Thread-safe reference to the LibSQL database connection.
+    ///
+    /// This connection is used to store validated analytics events in the in-memory
+    /// database before they are exported to PostgreSQL.
     pub connection: Arc<libsql::Connection>,
+
+    /// Thread-safe reference to the JSON schema validator.
+    ///
+    /// This validator ensures that incoming event payloads conform to the expected
+    /// JSON schema before they are processed and stored.
     pub validator: Arc<jsonschema::Validator>,
 }
 
@@ -48,46 +89,11 @@ async fn main() {
 
     select! {
         _ = shutdown_handler(memory_database.clone(), postgres_exporter.clone()) => {}
-        _ = server_handler(memory_database.clone()) => {}
-        _ = metrics_server_handler(memory_database.clone()) => {}
-        _ = flush_to_database(memory_database.clone(), postgres_exporter.clone()) => {}
+        _ = public_endpoint_handler(memory_database.clone()) => {}
+        _ = private_endpoint_handler(memory_database.clone()) => {}
+        _ = periodic_parquet_export_handler(memory_database.clone()) => {}
+        _ = periodic_export_handler(memory_database.clone(), postgres_exporter.clone()) => {}
     }
-}
-
-async fn handle_event(
-    State(state): State<AppState>,
-    payload: String,
-) -> Result<impl IntoResponse, ApplicationError> {
-    let json_payload = serde_json::from_str(&payload)
-        .map_err(|e| ApplicationError::InvalidPayload(e.to_string()))?;
-
-    state
-        .validator
-        .validate(&json_payload)
-        .map_err(|e| ApplicationError::InvalidPayload(e.to_string()))?;
-
-    let recorded_by = json_payload
-        .get("appId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            ApplicationError::InvalidPayload("Missing 'recorded_by' field".to_string())
-        })?;
-
-    state
-        .connection
-        .execute(
-            "INSERT INTO events (id, recorded_at, recorded_by, event) VALUES (?1, ?2, ?3, ?4)",
-            params!(
-                generate_uuid_v4(),
-                Utc::now().to_rfc3339(),
-                recorded_by,
-                payload
-            ),
-        )
-        .instrument(info_span!("insert_event"))
-        .await?;
-
-    Ok((StatusCode::ACCEPTED, String::new()))
 }
 
 async fn shutdown_handler(
@@ -108,7 +114,7 @@ async fn shutdown_handler(
         });
 }
 
-async fn server_handler(connection: Arc<Connection>) {
+async fn public_endpoint_handler(connection: Arc<Connection>) {
     let state = AppState {
         connection,
         validator: Arc::new(
@@ -116,8 +122,8 @@ async fn server_handler(connection: Arc<Connection>) {
         ),
     };
     let app = Router::new()
-        .route("/", post(handle_event))
-        .route("/{any}", post(handle_event))
+        .route("/", post(post_event))
+        .route("/{any}", post(post_event))
         .layer(
             ServiceBuilder::new()
                 .layer(from_fn(validate_content_type))
@@ -140,22 +146,12 @@ async fn server_handler(connection: Arc<Connection>) {
         .expect("failed to start server")
 }
 
-async fn generate_metrics(
-    State((connection, instance_id)): State<(Arc<Connection>, String)>,
-) -> Result<impl IntoResponse, ApplicationError> {
-    let mut exporter = exporter::prometheus::PrometheusExporter {
-        buffer: &mut String::new(),
-    };
-    exporter.publish(Some(instance_id), connection).await?;
-    Ok((StatusCode::OK, exporter.buffer.clone()))
-}
-
-async fn metrics_server_handler(connection: Arc<Connection>) {
+async fn private_endpoint_handler(connection: Arc<Connection>) {
     // This server is dedicated to serving Prometheus metrics for observability purposes.
     // It uses a separate port (8000) to isolate metrics traffic from application traffic.
     let app_id = generate_uuid_v4();
     let app = Router::new()
-        .route("/metrics", get(generate_metrics))
+        .route("/metrics", get(get_metrics))
         .with_state((connection, app_id))
         .layer(TraceLayer::new_for_http());
 
@@ -175,7 +171,7 @@ async fn metrics_server_handler(connection: Arc<Connection>) {
 /// # Arguments
 /// * `memory_connection` - Arc pointer to the in-memory libsql::Connection
 /// * `postgres_client` - Arc pointer to a RwLock-wrapped tokio_postgres::Client
-async fn flush_to_database(
+async fn periodic_export_handler(
     memory_connection: Arc<libsql::Connection>,
     mut postgresql_exporter: exporter::postgresql::PostgresqlExporter,
 ) {
@@ -191,5 +187,51 @@ async fn flush_to_database(
                 tracing::error!("Failed to flush events to PostgreSQL: {}", e);
                 0
             });
+    }
+}
+async fn periodic_parquet_export_handler(connection: Arc<libsql::Connection>) -> Result<()> {
+    let mut interval = interval(Duration::from_secs(300)); // flush every 5 minutes
+
+    let upload_task_fn_generator = async |connection: Arc<libsql::Connection>| -> Result<()> {
+        let audience = std::env::var("GOOGLE_WORKLOAD_IDENTITY_AUDIENCE").ok();
+        let service_account_token_path = std::env::var("SERVICE_ACCOUNT_TOKEN_PATH").ok();
+
+        if audience.is_none() || service_account_token_path.is_none() {
+            info!("Parquet export is not configured, skipping...");
+            return Ok(());
+        }
+
+        let service_account_token_path =
+            service_account_token_path.ok_or(anyhow!("missing token"))?;
+
+        let mut buffer = Vec::<u8>::new();
+        let mut exporter = exporter::parquet::ParquetExporter {
+            buffer: &mut buffer,
+        };
+        exporter.publish(None, connection.clone()).await?;
+
+        let config = WorkloadIdentityConfig {
+            audience,
+            service_account_token_path,
+            sts_endpoint: "https://sts.googleapis.com/v1/token".to_string(),
+        };
+
+        let bucket_name = std::env::var("PARQUET_STORAGE_BUCKET")?;
+
+        let mut client = GoogleStorageClient::new(config);
+        let now = SystemTime::now();
+        let duration = now.duration_since(UNIX_EPOCH)?;
+        let micros = duration.as_micros();
+
+        client
+            .upload_binary_data(&bucket_name, &micros.to_string(), buffer.as_slice(), None)
+            .await?;
+
+        Ok(())
+    };
+
+    loop {
+        interval.tick().await;
+        spawn(upload_task_fn_generator(connection.clone()));
     }
 }

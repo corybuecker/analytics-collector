@@ -1,3 +1,4 @@
+pub mod parquet;
 pub mod postgresql;
 pub mod prometheus;
 
