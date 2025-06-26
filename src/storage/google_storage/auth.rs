@@ -38,12 +38,32 @@
 //! 3. Cache the access token until it expires (with a 5-minute buffer)
 //! 4. Use the access token to authenticate with Google Cloud services
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use thiserror::Error;
 use tokio::fs;
 use tracing::{debug, error, info};
+
+#[derive(Error, Debug)]
+pub enum GoogleAuthError {
+    #[error("could not find the service token")]
+    MissingToken,
+    #[error("audience must be configured")]
+    MissingAudience,
+    #[error("token exchange failed with status {status}: {message}")]
+    TokenExchangeFailed { status: u16, message: String },
+    #[error("failed to read service account token from {path}: {source}")]
+    TokenReadError {
+        path: String,
+        source: std::io::Error,
+    },
+    #[error("service account token is empty")]
+    EmptyToken,
+    #[error("failed to parse token exchange response: {0}")]
+    ParseError(#[from] reqwest::Error),
+}
 
 /// Token exchange request payload for workload identity federation
 #[derive(Debug, Serialize)]
@@ -67,25 +87,42 @@ struct TokenExchangeResponse {
 #[derive(Debug, Clone)]
 pub struct WorkloadIdentityConfig {
     pub audience: Option<String>,
-    pub service_account_token_path: String,
-    pub sts_endpoint: String,
+    pub service_account_token_path: Option<String>,
 }
 
 impl Default for WorkloadIdentityConfig {
     fn default() -> Self {
+        let audience = std::env::var("GOOGLE_WORKLOAD_IDENTITY_AUDIENCE").ok();
+        let service_account_token_path = std::env::var("SERVICE_ACCOUNT_TOKEN_PATH").ok();
+
         Self {
-            audience: Some(String::new()),
-            service_account_token_path: "/var/run/secrets/kubernetes.io/serviceaccount/token"
-                .to_string(),
-            sts_endpoint: "https://sts.googleapis.com/v1/token".to_string(),
+            audience,
+            service_account_token_path,
         }
     }
 }
 
 impl WorkloadIdentityConfig {
-    pub fn audience(&self) -> Result<String> {
+    pub fn sts_endpoint(&self) -> String {
+        "https://sts.googleapis.com/v1/token".to_string()
+    }
+
+    pub fn enabled(&self) -> bool {
+        debug!(
+            "audience: {:?}, service_account_token_path: {:?}",
+            self.audience(),
+            self.service_account_token_path
+        );
+        if self.audience.is_none() || self.service_account_token_path.is_none() {
+            return false;
+        }
+
+        true
+    }
+
+    pub fn audience(&self) -> Result<String, GoogleAuthError> {
         match &self.audience {
-            None => Err(anyhow!("audience must be configured")),
+            None => Err(GoogleAuthError::MissingAudience),
             Some(s) => Ok(s.clone()),
         }
     }
@@ -158,13 +195,13 @@ impl GoogleAuthClient {
 
         debug!(
             "Making token exchange request to: {}",
-            self.config.sts_endpoint
+            self.config.sts_endpoint()
         );
 
         // Make the token exchange request
         let response = self
             .client
-            .post(&self.config.sts_endpoint)
+            .post(self.config.sts_endpoint())
             .header("Content-Type", "application/x-www-form-urlencoded")
             .form(&request)
             .send()
@@ -180,11 +217,11 @@ impl GoogleAuthClient {
                 "Token exchange failed with status {}: {}",
                 status, error_text
             );
-            return Err(anyhow!(
-                "Token exchange failed: {} - {}",
-                status,
-                error_text
-            ));
+            return Err(GoogleAuthError::TokenExchangeFailed {
+                status: status.as_u16(),
+                message: error_text,
+            }
+            .into());
         }
 
         let token_response: TokenExchangeResponse = response.json().await?;
@@ -211,25 +248,30 @@ impl GoogleAuthClient {
     /// Read the Kubernetes service account token from the filesystem
     async fn read_service_account_token(&self) -> Result<String> {
         debug!(
-            "Reading service account token from: {}",
+            "Reading service account token from: {:#?}",
             self.config.service_account_token_path
         );
 
-        let token = fs::read_to_string(&self.config.service_account_token_path)
+        let service_account_token_path = self
+            .config
+            .service_account_token_path
+            .clone()
+            .ok_or(GoogleAuthError::MissingToken)?;
+
+        let token = fs::read_to_string(&service_account_token_path)
             .await
             .map_err(|e| {
                 error!("Failed to read service account token: {}", e);
-                anyhow!(
-                    "Failed to read service account token from {}: {}",
-                    self.config.service_account_token_path,
-                    e
-                )
+                GoogleAuthError::TokenReadError {
+                    path: service_account_token_path.clone(),
+                    source: e,
+                }
             })?;
 
         let token = token.trim().to_string();
 
         if token.is_empty() {
-            return Err(anyhow!("Service account token is empty"));
+            return Err(GoogleAuthError::EmptyToken.into());
         }
 
         debug!(
@@ -269,17 +311,6 @@ mod tests {
             expires_at: SystemTime::now() + Duration::from_secs(200), // 3 minutes from now
         };
         assert!(soon_expired_token.is_expired());
-    }
-
-    #[test]
-    fn test_workload_identity_config_default() {
-        let config = WorkloadIdentityConfig::default();
-        assert_eq!(
-            config.service_account_token_path,
-            "/var/run/secrets/kubernetes.io/serviceaccount/token"
-        );
-        assert_eq!(config.sts_endpoint, "https://sts.googleapis.com/v1/token");
-        assert!(config.audience.unwrap().is_empty());
     }
 
     #[tokio::test]

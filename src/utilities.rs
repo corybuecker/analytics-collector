@@ -1,7 +1,5 @@
 use uuid::Uuid;
 
-pub mod google_auth;
-
 pub fn generate_uuid_v4() -> String {
     Uuid::new_v4().to_string()
 }
