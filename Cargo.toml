@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = { version = "1.0.98" }
 arrow = { version = "55.1.0" }
+arrow-schema = "55.2.0"
 axum = { version = "0.8.4" }
 chrono = { version = "0.4.41" }
 jsonschema = { version = "0.30.0" }

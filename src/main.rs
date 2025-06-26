@@ -202,7 +202,11 @@ async fn periodic_parquet_export_handler(connection: Arc<libsql::Connection>) ->
         let micros = duration.as_micros();
 
         client
-            .upload_binary_data(&micros.to_string(), buffer.as_slice(), None)
+            .upload_binary_data(
+                &micros.to_string(),
+                buffer.as_slice(),
+                Some("application/vnd.apache.parquet"),
+            )
             .await?;
 
         Ok(())
@@ -210,6 +214,15 @@ async fn periodic_parquet_export_handler(connection: Arc<libsql::Connection>) ->
 
     loop {
         interval.tick().await;
-        spawn(upload_task_fn_generator(connection.clone()));
+        let handle = spawn(upload_task_fn_generator(connection.clone()));
+
+        match handle.await {
+            Err(err) => tracing::error!("error {}", err),
+            Ok(result) => {
+                if let Err(err) = result {
+                    tracing::error!("error {}", err)
+                }
+            }
+        }
     }
 }
