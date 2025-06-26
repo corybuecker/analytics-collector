@@ -24,7 +24,7 @@ spec:
               - serviceAccountToken:
                   audience: patch-target
                   expirationSeconds: 3600
-                  path: token
+                  path: service-account-token
       containers:
         - name: analytics-collector
           image: analytics-collector
@@ -62,5 +62,5 @@ spec:
             periodSeconds: 10
           volumeMounts:
             - name: service-account-token-volume
-              mountPath: "/service-account"
+              mountPath: /var/run/secrets
               readOnly: true

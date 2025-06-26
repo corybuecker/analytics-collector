@@ -6,7 +6,7 @@ mod schemas;
 mod storage;
 mod utilities;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use axum::{
     Router,
     http::StatusCode,
@@ -30,9 +30,8 @@ use tokio::{
 };
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::info;
 use utilities::{
-    generate_uuid_v4, get_environment_variable_with_default, google_auth::WorkloadIdentityConfig,
+    generate_uuid_v4, get_environment_variable_with_default,
 };
 
 /// Application state shared across HTTP request handlers.
@@ -193,38 +192,19 @@ async fn periodic_parquet_export_handler(connection: Arc<libsql::Connection>) ->
     let mut interval = interval(Duration::from_secs(300)); // flush every 5 minutes
 
     let upload_task_fn_generator = async |connection: Arc<libsql::Connection>| -> Result<()> {
-        let audience = std::env::var("GOOGLE_WORKLOAD_IDENTITY_AUDIENCE").ok();
-        let service_account_token_path = std::env::var("SERVICE_ACCOUNT_TOKEN_PATH").ok();
-
-        if audience.is_none() || service_account_token_path.is_none() {
-            info!("Parquet export is not configured, skipping...");
-            return Ok(());
-        }
-
-        let service_account_token_path =
-            service_account_token_path.ok_or(anyhow!("missing token"))?;
-
         let mut buffer = Vec::<u8>::new();
         let mut exporter = exporter::parquet::ParquetExporter {
             buffer: &mut buffer,
         };
         exporter.publish(None, connection.clone()).await?;
 
-        let config = WorkloadIdentityConfig {
-            audience,
-            service_account_token_path,
-            sts_endpoint: "https://sts.googleapis.com/v1/token".to_string(),
-        };
-
-        let bucket_name = std::env::var("PARQUET_STORAGE_BUCKET")?;
-
-        let mut client = GoogleStorageClient::new(config);
+        let mut client = GoogleStorageClient::new()?;
         let now = SystemTime::now();
         let duration = now.duration_since(UNIX_EPOCH)?;
         let micros = duration.as_micros();
 
         client
-            .upload_binary_data(&bucket_name, &micros.to_string(), buffer.as_slice(), None)
+            .upload_binary_data(&micros.to_string(), buffer.as_slice(), None)
             .await?;
 
         Ok(())
