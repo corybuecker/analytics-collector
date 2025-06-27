@@ -13,6 +13,7 @@ Analytics Collector is a simple, extensible system for collecting and storing an
 
 - Rust
 - Node.js (for the client library)
+- Google Cloud account (optional, for event export to Google Storage in Parquet files)
 - PostgreSQL (optional, for event export)
 - Prometheus (optional, for event export and monitoring)
 
