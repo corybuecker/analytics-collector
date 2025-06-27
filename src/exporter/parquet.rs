@@ -4,6 +4,7 @@ use arrow::{
     datatypes::Field,
 };
 use arrow_schema::{Schema, SchemaBuilder};
+use chrono::{DateTime, Utc};
 use libsql::params;
 use parquet::arrow::ArrowWriter;
 use std::sync::Arc;
@@ -11,6 +12,7 @@ use tracing::{debug, info};
 
 pub struct ParquetExporter<'a> {
     pub buffer: &'a mut Vec<u8>,
+    pub last_export_at: DateTime<Utc>,
 }
 
 fn schema() -> Arc<Schema> {
@@ -45,8 +47,8 @@ impl Exporter for ParquetExporter<'_> {
 
         let mut results = source
             .query(
-                "select id, event, recorded_at, recorded_by from events",
-                params![],
+                "select id, event, recorded_at, recorded_by from events where recorded_at > ?",
+                params![self.last_export_at.to_rfc3339()],
             )
             .await?;
 
