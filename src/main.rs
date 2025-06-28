@@ -13,7 +13,7 @@ use axum::{
     middleware::from_fn,
     routing::{get, post},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use exporter::{Exporter, postgresql::PostgresqlExporter};
 use libsql::Connection;
 use middleware::{validate_body_length, validate_content_type};
@@ -112,6 +112,17 @@ async fn shutdown_handler(
             tracing::error!("Failed to flush events to PostgreSQL: {}", e);
             0
         });
+
+    export_rows_as_parquet(
+        memory_connection.clone(),
+        Arc::new(RwLock::new(
+            Utc::now()
+                .checked_sub_signed(TimeDelta::minutes(1))
+                .unwrap(),
+        )),
+    )
+    .await
+    .expect("did not export parquet");
 }
 
 async fn public_endpoint_handler(connection: Arc<Connection>) {
@@ -189,50 +200,52 @@ async fn periodic_export_handler(
             });
     }
 }
+
+async fn export_rows_as_parquet(
+    connection: Arc<libsql::Connection>,
+    last_export_at: Arc<RwLock<DateTime<Utc>>>,
+) -> Result<()> {
+    let mut buffer = Vec::<u8>::new();
+
+    let last_export_at_copy = last_export_at.clone();
+    let last_export_at_copy = last_export_at_copy.read().await;
+    let last_export_at_copy = last_export_at_copy.deref().to_owned();
+
+    let mut exporter = exporter::parquet::ParquetExporter {
+        buffer: &mut buffer,
+        last_export_at: last_export_at_copy,
+    };
+
+    let rows = exporter.publish(None, connection.clone()).await?;
+
+    if rows > 0 {
+        let mut client = GoogleStorageClient::new()?;
+        let now = SystemTime::now();
+        let duration = now.duration_since(UNIX_EPOCH)?;
+        let micros = duration.as_micros();
+
+        client
+            .upload_binary_data(
+                &micros.to_string(),
+                buffer.as_slice(),
+                Some("application/vnd.apache.parquet"),
+            )
+            .await?;
+    }
+
+    Ok(())
+}
+
 async fn periodic_parquet_export_handler(connection: Arc<libsql::Connection>) -> Result<()> {
     let mut interval = interval(Duration::from_secs(30)); // flush every 30 seconds
     let last_export_at = Arc::new(RwLock::new(Utc::now()));
-
-    let upload_task_fn_generator = async |connection: Arc<libsql::Connection>,
-                                          last_export_at: Arc<RwLock<DateTime<Utc>>>|
-           -> Result<()> {
-        let mut buffer = Vec::<u8>::new();
-
-        let last_export_at_copy = last_export_at.clone();
-        let last_export_at_copy = last_export_at_copy.read().await;
-        let last_export_at_copy = last_export_at_copy.deref().to_owned();
-
-        let mut exporter = exporter::parquet::ParquetExporter {
-            buffer: &mut buffer,
-            last_export_at: last_export_at_copy,
-        };
-
-        let rows = exporter.publish(None, connection.clone()).await?;
-
-        if rows > 0 {
-            let mut client = GoogleStorageClient::new()?;
-            let now = SystemTime::now();
-            let duration = now.duration_since(UNIX_EPOCH)?;
-            let micros = duration.as_micros();
-
-            client
-                .upload_binary_data(
-                    &micros.to_string(),
-                    buffer.as_slice(),
-                    Some("application/vnd.apache.parquet"),
-                )
-                .await?;
-        }
-
-        Ok(())
-    };
 
     loop {
         interval.tick().await;
 
         let exported_started = Utc::now();
 
-        let handle = spawn(upload_task_fn_generator(
+        let handle = spawn(export_rows_as_parquet(
             connection.clone(),
             last_export_at.clone(),
         ));
