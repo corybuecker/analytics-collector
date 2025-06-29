@@ -32,7 +32,7 @@ pub async fn post_event(
     state
         .connection
         .execute(
-            "INSERT INTO events (id, recorded_at, recorded_by, event) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO events (id, recorded_at, recorded_by, event) VALUES (?1, ?2, ?3, json(?4))",
             params!(
                 generate_uuid_v4(),
                 Utc::now().to_rfc3339(),
