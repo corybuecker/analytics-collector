@@ -52,6 +52,33 @@ impl<'de> Visitor<'de> for EventVisitor {
             app_id: intermediate.app_id,
         })
     }
+
+    fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        #[derive(Deserialize)]
+        struct IntermediateEvent {
+            ts: Option<DateTime<Utc>>,
+            entity: String,
+            action: String,
+            path: Option<String>,
+
+            #[serde(rename = "appId")]
+            app_id: String,
+        }
+
+        let intermediate: IntermediateEvent =
+            serde_json::from_str(v).map_err(serde::de::Error::custom)?;
+
+        Ok(Event {
+            ts: intermediate.ts,
+            entity: intermediate.entity,
+            action: intermediate.action,
+            path: intermediate.path,
+            app_id: intermediate.app_id,
+        })
+    }
 }
 
 impl<'de> Deserialize<'de> for Event {
@@ -94,17 +121,15 @@ pub async fn flush(connection: Arc<Connection>) -> Result<Vec<EventRecord>> {
 
     Ok(rows
         .into_stream()
-        .filter_map(async |row| {
-            match row {
-                Ok(valid_row) => {
-                    let record = from_row::<EventRecord>(&valid_row);
-                    debug!("{:?}", record);
-                    record.ok()
-                }
-                Err(e) => {
-                    tracing::error!("Failed to process row: {:?}", e);
-                    None
-                }
+        .filter_map(async |row| match row {
+            Ok(valid_row) => {
+                let record = from_row::<EventRecord>(&valid_row);
+                debug!("{:?}", record);
+                record.ok()
+            }
+            Err(e) => {
+                tracing::error!("Failed to process row: {:?}", e);
+                None
             }
         })
         .collect::<Vec<EventRecord>>()
