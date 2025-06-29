@@ -24,7 +24,10 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use storage::{google_storage::GoogleStorageClient, memory::initialize};
+use storage::{
+    google_storage::GoogleStorageClient,
+    memory::{flush, initialize},
+};
 use tokio::{select, signal::unix::SignalKind, sync::RwLock};
 use tokio::{
     spawn,
@@ -32,6 +35,7 @@ use tokio::{
 };
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
+use tracing::debug;
 use utilities::{generate_uuid_v4, get_environment_variable_with_default};
 
 /// Application state shared across HTTP request handlers.
@@ -190,6 +194,10 @@ async fn periodic_export_handler(
 
     loop {
         interval.tick().await;
+
+        let a = flush(memory_connection.clone()).await;
+
+        debug!("{:?}", a);
 
         postgresql_exporter
             .publish(None, memory_connection.clone())
