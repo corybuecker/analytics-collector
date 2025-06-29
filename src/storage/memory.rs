@@ -95,9 +95,17 @@ pub async fn flush(connection: Arc<Connection>) -> Result<Vec<EventRecord>> {
     Ok(rows
         .into_stream()
         .filter_map(async |row| {
-            let record = from_row::<EventRecord>(&row.unwrap());
-            debug!("{:?}", record);
-            record.ok()
+            match row {
+                Ok(valid_row) => {
+                    let record = from_row::<EventRecord>(&valid_row);
+                    debug!("{:?}", record);
+                    record.ok()
+                }
+                Err(e) => {
+                    tracing::error!("Failed to process row: {:?}", e);
+                    None
+                }
+            }
         })
         .collect::<Vec<EventRecord>>()
         .await)
