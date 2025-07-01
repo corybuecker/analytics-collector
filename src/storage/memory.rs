@@ -136,6 +136,34 @@ pub async fn flush(connection: Arc<Connection>) -> Result<Vec<EventRecord>> {
         .await)
 }
 
+pub async fn flush_since(
+    connection: Arc<Connection>,
+    since: DateTime<Utc>,
+) -> Result<Vec<EventRecord>> {
+    let rows = connection
+        .query(
+            "SELECT id, event, recorded_by, recorded_at FROM events WHERE recorded_at > ?",
+            params!(since.to_rfc3339()),
+        )
+        .await?;
+
+    Ok(rows
+        .into_stream()
+        .filter_map(async |row| match row {
+            Ok(valid_row) => {
+                let record = from_row::<EventRecord>(&valid_row);
+                debug!("{:?}", record);
+                record.ok()
+            }
+            Err(e) => {
+                tracing::error!("Failed to process row: {:?}", e);
+                None
+            }
+        })
+        .collect::<Vec<EventRecord>>()
+        .await)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

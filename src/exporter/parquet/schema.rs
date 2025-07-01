@@ -1,11 +1,8 @@
 use anyhow::{Result, anyhow};
 use arrow_array::{ArrayRef, RecordBatch, StringArray};
 use arrow_schema::{Field, Schema, SchemaBuilder};
-use libsql::Connection;
 use std::sync::Arc;
 use tracing::info;
-
-use crate::storage::memory::flush;
 
 pub fn generate_schema() -> Arc<Schema> {
     let mut builder = SchemaBuilder::new();
@@ -34,8 +31,8 @@ pub fn generate_schema() -> Arc<Schema> {
     Arc::new(builder.finish())
 }
 
-pub async fn generate_record_batch(
-    source: Arc<Connection>,
+pub fn generate_record_batch<'a>(
+    event_records: impl IntoIterator<Item = &'a crate::storage::memory::EventRecord>,
 ) -> Result<(arrow_array::RecordBatch, usize)> {
     let mut id_values = Vec::<String>::new();
 
@@ -48,17 +45,17 @@ pub async fn generate_record_batch(
     let mut recorded_at_values = Vec::<String>::new();
     let mut recorded_by_values = Vec::<Option<String>>::new();
 
-    for event_record in flush(source.clone()).await? {
-        id_values.push(event_record.id);
+    for event_record in event_records {
+        id_values.push(event_record.id.clone());
 
         event_ts_values.push(event_record.event.ts.map(|t| t.to_rfc3339()));
-        event_entity_values.push(event_record.event.entity);
-        event_action_values.push(event_record.event.action);
-        event_path_values.push(event_record.event.path);
-        event_app_id_values.push(event_record.event.app_id);
+        event_entity_values.push(event_record.event.entity.clone());
+        event_action_values.push(event_record.event.action.clone());
+        event_path_values.push(event_record.event.path.clone());
+        event_app_id_values.push(event_record.event.app_id.clone());
 
-        recorded_at_values.push(event_record.recorded_at.to_rfc3339());
-        recorded_by_values.push(event_record.recorded_by);
+        recorded_at_values.push(event_record.recorded_at.clone().to_rfc3339());
+        recorded_by_values.push(event_record.recorded_by.clone());
     }
 
     let event_values = arrow_array::StructArray::from(vec![

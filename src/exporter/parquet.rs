@@ -1,11 +1,14 @@
 mod schema;
+mod serializer;
 
-use crate::exporter::Exporter;
+use crate::{
+    exporter::Exporter,
+    storage::{EventSerializer, memory::flush_since},
+};
 use chrono::{DateTime, Utc};
-use parquet::arrow::ArrowWriter;
-use schema::generate_record_batch;
+use serializer::ParqetSerializer;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::info;
 
 pub struct ParquetExporter<'a> {
     pub buffer: &'a mut Vec<u8>,
@@ -20,16 +23,9 @@ impl Exporter for ParquetExporter<'_> {
         source: Arc<libsql::Connection>,
     ) -> anyhow::Result<usize> {
         info!("Starting parquet export");
+        let event_records = flush_since(source.clone(), self.last_export_at).await?;
+        let (buffer, row_count) = ParqetSerializer.to_bytes(&event_records)?;
 
-        let (record_batch, row_count) = generate_record_batch(source.clone()).await?;
-
-        let mut buffer = Vec::<u8>::new();
-        let mut writer = ArrowWriter::try_new(&mut buffer, record_batch.schema(), None)?;
-
-        writer.write(&record_batch)?;
-        writer.close()?;
-
-        debug!("Parquet data written, buffer size: {} bytes", buffer.len());
         self.buffer.extend_from_slice(&buffer);
 
         info!(
