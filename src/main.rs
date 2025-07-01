@@ -259,10 +259,14 @@ async fn periodic_parquet_export_handler(connection: Arc<libsql::Connection>) ->
         ));
 
         match handle.await {
-            Err(err) => tracing::error!("error {}", err),
+            Err(err) => {
+                tracing::error!("error {}", err);
+                continue;
+            }
             Ok(result) => {
                 if let Err(err) = result {
-                    tracing::error!("error {}", err)
+                    tracing::error!("error {}", err);
+                    continue;
                 }
             }
         }
