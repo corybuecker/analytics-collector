@@ -34,7 +34,7 @@ use tokio::{
 };
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::error;
+use tracing::{Instrument, error, instrument};
 use utilities::{generate_uuid_v4, get_environment_variable_with_default};
 
 #[derive(Clone, Debug)]
@@ -79,6 +79,7 @@ async fn main() {
     }
 }
 
+#[instrument(name = "shutdown-handler")]
 async fn shutdown_handler(connection: Arc<libsql::Connection>) {
     let mut signal = tokio::signal::unix::signal(SignalKind::terminate())
         .expect("failed to install SIGTERM handler");
@@ -93,6 +94,7 @@ async fn shutdown_handler(connection: Arc<libsql::Connection>) {
     #[cfg(feature = "export-postgres")]
     postgres_exporter
         .publish(None, connection.clone())
+        .instrument(tracing::info_span!("export-postgres"))
         .await
         .unwrap_or_else(|e| {
             tracing::error!("Failed to flush events to PostgreSQL: {}", e);
@@ -109,9 +111,10 @@ async fn shutdown_handler(connection: Arc<libsql::Connection>) {
     #[cfg(feature = "export-parquet")]
     parquet_exporter
         .publish(None, connection.clone())
+        .instrument(tracing::info_span!("export-parquet"))
         .await
         .unwrap_or_else(|e| {
-            tracing::error!("Failed to flush events to PostgreSQL: {}", e);
+            tracing::error!("Failed to flush events to Parquet: {}", e);
             0
         });
 }
