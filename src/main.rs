@@ -114,7 +114,7 @@ async fn shutdown_handler(connection: Arc<libsql::Connection>) {
         .instrument(tracing::info_span!("export-parquet"))
         .await
         .unwrap_or_else(|e| {
-            tracing::error!("Failed to flush events to PostgreSQL: {}", e);
+            tracing::error!("Failed to flush events to Parquet: {}", e);
             0
         });
 }
