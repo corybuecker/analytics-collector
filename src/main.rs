@@ -16,7 +16,11 @@ use axum::{
 use chrono::{DateTime, TimeDelta, Utc};
 #[cfg(feature = "export-postgres")]
 use exporter::postgresql::PostgresqlExporter;
-use exporter::{Exporter, parquet::ParquetExporter};
+
+#[cfg(feature = "export-parquet")]
+use exporter::parquet::ParquetExporter;
+
+use exporter::Exporter;
 use libsql::Connection;
 use middleware::{validate_body_length, validate_content_type};
 use responses::{get_metrics, post_event};

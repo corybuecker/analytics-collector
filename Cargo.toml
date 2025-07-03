@@ -5,17 +5,17 @@ edition = "2024"
 
 [dependencies]
 anyhow = { version = "1.0.98" }
-arrow = { version = "55.1.0" }
-arrow-array = { version = "55.2.0" }
-arrow-schema = { version = "55.2.0" }
+arrow = { version = "55.1.0", optional = true }
+arrow-array = { version = "55.2.0", optional = true }
+arrow-schema = { version = "55.2.0", optional = true }
 axum = { version = "0.8.4" }
 chrono = { version = "0.4.41", features = ["serde"] }
 jsonschema = { version = "0.30.0" }
 libsql = { version = "0.9.11", default-features = false, features = ["core", "serde", "stream"] }
-parquet = { version = "55.2.0", features = ["arrow"] }
+parquet = { version = "55.2.0", features = ["arrow"], optional = true }
 prometheus-client = { version = "0.23.1" }
 reqwest = { version = "0.12.20", default-features = false, features = ["rustls-tls", "json"] }
-rust-database-common = { git = "https://github.com/corybuecker/rust-database-common", branch = "main" }
+rust-database-common = { git = "https://github.com/corybuecker/rust-database-common", branch = "main", optional = true }
 rust-web-common = { git = "https://github.com/corybuecker/rust-web-common", branch = "main" }
 serde = { version = "1.0.219" }
 serde_json = { version = "1.0.140" }
@@ -30,5 +30,5 @@ uuid = { version = "1.17.0", features = ["v4"] }
 
 [features]
 default = ["export-postgres", "export-parquet"]
-export-postgres = []
-export-parquet = []
+export-postgres = ["dep:rust-database-common"]
+export-parquet = ["dep:arrow", "dep:arrow-array", "dep:arrow-schema", "dep:parquet"]
