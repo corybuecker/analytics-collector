@@ -14,7 +14,9 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, TimeDelta, Utc};
-use exporter::{Exporter, postgresql::PostgresqlExporter};
+use exporter::Exporter;
+#[cfg(feature = "export-postgres")]
+use exporter::postgresql::PostgresqlExporter;
 use libsql::Connection;
 use middleware::{validate_body_length, validate_content_type};
 use responses::{get_metrics, post_event};
@@ -24,10 +26,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use storage::{
-    google_storage::GoogleStorageClient,
-    memory::{flush, initialize},
-};
+use storage::{google_storage::GoogleStorageClient, memory::initialize};
 use tokio::{select, signal::unix::SignalKind, sync::RwLock};
 use tokio::{
     spawn,
@@ -35,47 +34,12 @@ use tokio::{
 };
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::debug;
+use tracing::error;
 use utilities::{generate_uuid_v4, get_environment_variable_with_default};
 
-/// Application state shared across HTTP request handlers.
-///
-/// This struct contains the core dependencies needed by the analytics collector service,
-/// including database connectivity and JSON schema validation capabilities. It is designed
-/// to be efficiently cloned across async tasks using `Arc` for shared ownership.
-///
-/// # Fields
-///
-/// * `connection` - Thread-safe reference to the LibSQL database connection used for
-///   storing analytics events in the in-memory database
-/// * `validator` - Thread-safe reference to the JSON schema validator used to validate
-///   incoming event payloads against the expected schema
-///
-/// # Usage
-///
-/// The `AppState` is typically passed to Axum route handlers via the `State` extractor:
-///
-/// ```rust,ignore
-/// async fn handle_event(
-///     State(state): State<AppState>,
-///     payload: String,
-/// ) -> Result<impl IntoResponse, ApplicationError> {
-///     // Use state.connection for database operations
-///     // Use state.validator for payload validation
-/// }
-/// ```
 #[derive(Clone, Debug)]
 pub struct AppState {
-    /// Thread-safe reference to the LibSQL database connection.
-    ///
-    /// This connection is used to store validated analytics events in the in-memory
-    /// database before they are exported to PostgreSQL.
     pub connection: Arc<libsql::Connection>,
-
-    /// Thread-safe reference to the JSON schema validator.
-    ///
-    /// This validator ensures that incoming event payloads conform to the expected
-    /// JSON schema before they are processed and stored.
     pub validator: Arc<jsonschema::Validator>,
 }
 
@@ -87,29 +51,42 @@ async fn main() {
 
     let memory_database = initialize().await.expect("failed to initialize database");
     let memory_database = Arc::new(memory_database);
-    let postgres_exporter = PostgresqlExporter::build()
-        .await
-        .expect("failed to initialize PostgreSQL exporter");
+
+    #[cfg(feature = "export-postgres")]
+    let periodic_postgres_export_handler =
+        spawn(periodic_postgres_export_handler(memory_database.clone()));
+
+    #[cfg(not(feature = "export-postgres"))]
+    let periodic_postgres_export_handler = spawn(async {});
+
+    let periodic_parquet_export_handler =
+        spawn(periodic_parquet_export_handler(memory_database.clone()));
+    let internal_endpoint_handler = spawn(internal_endpoint_handler(memory_database.clone()));
+    let external_endpoint_handler = spawn(external_endpoint_handler(memory_database.clone()));
+    let shutdown_handler = spawn(shutdown_handler(memory_database.clone()));
 
     select! {
-        _ = shutdown_handler(memory_database.clone(), postgres_exporter.clone()) => {}
-        _ = public_endpoint_handler(memory_database.clone()) => {}
-        _ = private_endpoint_handler(memory_database.clone()) => {}
-        _ = periodic_parquet_export_handler(memory_database.clone()) => {}
-        _ = periodic_export_handler(memory_database.clone(), postgres_exporter.clone()) => {}
+        _ = periodic_postgres_export_handler => {}
+        _ = periodic_parquet_export_handler => {}
+        _ = internal_endpoint_handler => {}
+        _ = external_endpoint_handler => {}
+        _ = shutdown_handler => {}
     }
 }
 
-async fn shutdown_handler(
-    memory_connection: Arc<libsql::Connection>,
-    mut postgresql_exporter: exporter::postgresql::PostgresqlExporter,
-) {
+async fn shutdown_handler(memory_connection: Arc<libsql::Connection>) {
     let mut signal = tokio::signal::unix::signal(SignalKind::terminate())
         .expect("failed to install SIGTERM handler");
 
     signal.recv().await;
 
-    postgresql_exporter
+    #[cfg(feature = "export-postgres")]
+    let mut postgres_exporter = PostgresqlExporter::build()
+        .await
+        .expect("failed to initialize PostgreSQL exporter");
+
+    #[cfg(feature = "export-postgres")]
+    postgres_exporter
         .publish(None, memory_connection.clone())
         .await
         .unwrap_or_else(|e| {
@@ -129,7 +106,7 @@ async fn shutdown_handler(
     .expect("did not export parquet");
 }
 
-async fn public_endpoint_handler(connection: Arc<Connection>) {
+async fn external_endpoint_handler(connection: Arc<Connection>) {
     let state = AppState {
         connection,
         validator: Arc::new(
@@ -161,9 +138,9 @@ async fn public_endpoint_handler(connection: Arc<Connection>) {
         .expect("failed to start server")
 }
 
-async fn private_endpoint_handler(connection: Arc<Connection>) {
+async fn internal_endpoint_handler(connection: Arc<Connection>) {
     // This server is dedicated to serving Prometheus metrics for observability purposes.
-    // It uses a separate port (8000) to isolate metrics traffic from application traffic.
+    // It uses a separate port (($PORT || 8000) + 1) to isolate metrics traffic from application traffic.
     let app_id = generate_uuid_v4();
     let app = Router::new()
         .route("/metrics", get(get_metrics))
@@ -172,6 +149,7 @@ async fn private_endpoint_handler(connection: Arc<Connection>) {
 
     let port = get_environment_variable_with_default("PORT", "8000".to_string());
     let port = port.parse::<u16>().unwrap_or(8000) + 1;
+
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
         .await
         .unwrap();
@@ -181,29 +159,22 @@ async fn private_endpoint_handler(connection: Arc<Connection>) {
         .expect("failed to start server")
 }
 
-/// Periodically flushes all events from the in-memory database to the PostgreSQL instance.
-///
-/// # Arguments
-/// * `memory_connection` - Arc pointer to the in-memory libsql::Connection
-/// * `postgres_client` - Arc pointer to a RwLock-wrapped tokio_postgres::Client
-async fn periodic_export_handler(
-    memory_connection: Arc<libsql::Connection>,
-    mut postgresql_exporter: exporter::postgresql::PostgresqlExporter,
-) {
+#[cfg(feature = "export-postgres")]
+async fn periodic_postgres_export_handler(memory_connection: Arc<libsql::Connection>) {
+    let mut postgres_exporter = PostgresqlExporter::build()
+        .await
+        .expect("failed to initialize PostgreSQL exporter");
+
     let mut interval = interval(Duration::from_secs(10)); // flush every 10 seconds
 
     loop {
         interval.tick().await;
 
-        let a = flush(memory_connection.clone()).await;
-
-        debug!("{:?}", a);
-
-        postgresql_exporter
+        postgres_exporter
             .publish(None, memory_connection.clone())
             .await
             .unwrap_or_else(|e| {
-                tracing::error!("Failed to flush events to PostgreSQL: {}", e);
+                error!("failed to flush events to PostgreSQL: {e}");
                 0
             });
     }
@@ -215,13 +186,13 @@ async fn export_rows_as_parquet(
 ) -> Result<()> {
     let mut buffer = Vec::<u8>::new();
 
-    let last_export_at_copy = last_export_at.clone();
-    let last_export_at_copy = last_export_at_copy.read().await;
-    let last_export_at_copy = last_export_at_copy.deref().to_owned();
+    let last_export_at = last_export_at.clone();
+    let last_export_at = last_export_at.read().await;
+    let last_export_at = last_export_at.deref().to_owned();
 
     let mut exporter = exporter::parquet::ParquetExporter {
         buffer: &mut buffer,
-        last_export_at: last_export_at_copy,
+        last_export_at,
     };
 
     let rows = exporter.publish(None, connection.clone()).await?;

@@ -1,11 +1,11 @@
 use super::SCHEMA;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use futures_util::StreamExt;
 use libsql::{Builder, Connection, de::from_row, params};
 use serde::{Deserialize, Deserializer, de::Visitor};
 use std::sync::Arc;
-use tracing::debug;
+use tokio_stream::StreamExt;
+use tracing::error;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -111,31 +111,6 @@ pub async fn initialize() -> Result<Connection> {
     Ok(connection)
 }
 
-pub async fn flush(connection: Arc<Connection>) -> Result<Vec<EventRecord>> {
-    let rows = connection
-        .query(
-            "SELECT id, event, recorded_by, recorded_at FROM events",
-            params!(vec![]),
-        )
-        .await?;
-
-    Ok(rows
-        .into_stream()
-        .filter_map(async |row| match row {
-            Ok(valid_row) => {
-                let record = from_row::<EventRecord>(&valid_row);
-                debug!("{:?}", record);
-                record.ok()
-            }
-            Err(e) => {
-                tracing::error!("Failed to process row: {:?}", e);
-                None
-            }
-        })
-        .collect::<Vec<EventRecord>>()
-        .await)
-}
-
 pub async fn flush_since(
     connection: Arc<Connection>,
     since: DateTime<Utc>,
@@ -149,14 +124,10 @@ pub async fn flush_since(
 
     Ok(rows
         .into_stream()
-        .filter_map(async |row| match row {
-            Ok(valid_row) => {
-                let record = from_row::<EventRecord>(&valid_row);
-                debug!("{:?}", record);
-                record.ok()
-            }
+        .filter_map(|row| match row {
+            Ok(valid_row) => from_row::<EventRecord>(&valid_row).ok(),
             Err(e) => {
-                tracing::error!("Failed to process row: {:?}", e);
+                error!("Failed to process row: {:?}", e);
                 None
             }
         })
