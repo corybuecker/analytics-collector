@@ -1,6 +1,6 @@
 # Analytics Collector
 
-Analytics Collector is a simple, extensible system for collecting and storing analytics events, with a focus on page views and anchor click events. It is composed of a Rust backend server and an optional TypeScript client library for easy integration with web applications.
+Analytics Collector is a simple, extensible system for collecting and storing analytics events, with a focus on web analytics such as page views and anchor click events. It is composed of a Rust backend server and an optional TypeScript client library for easy integration with web applications.
 
 ## Project Structure
 
