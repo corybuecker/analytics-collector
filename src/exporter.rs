@@ -1,4 +1,6 @@
+#[cfg(feature = "export-parquet")]
 pub mod parquet;
+#[cfg(feature = "export-postgres")]
 pub mod postgresql;
 pub mod prometheus;
 
