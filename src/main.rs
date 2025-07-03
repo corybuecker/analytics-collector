@@ -14,19 +14,15 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, TimeDelta, Utc};
-use exporter::Exporter;
 #[cfg(feature = "export-postgres")]
 use exporter::postgresql::PostgresqlExporter;
+use exporter::{Exporter, parquet::ParquetExporter};
 use libsql::Connection;
 use middleware::{validate_body_length, validate_content_type};
 use responses::{get_metrics, post_event};
 use rust_web_common::telemetry::TelemetryBuilder;
-use std::{
-    ops::Deref,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use storage::{google_storage::GoogleStorageClient, memory::initialize};
+use std::{ops::Deref, sync::Arc};
+use storage::memory::initialize;
 use tokio::{select, signal::unix::SignalKind, sync::RwLock};
 use tokio::{
     spawn,
@@ -59,8 +55,13 @@ async fn main() {
     #[cfg(not(feature = "export-postgres"))]
     let periodic_postgres_export_handler = spawn(async {});
 
+    #[cfg(feature = "export-parquet")]
     let periodic_parquet_export_handler =
         spawn(periodic_parquet_export_handler(memory_database.clone()));
+
+    #[cfg(not(feature = "export-parquet"))]
+    let periodic_parquet_export_handler = spawn(async {});
+
     let internal_endpoint_handler = spawn(internal_endpoint_handler(memory_database.clone()));
     let external_endpoint_handler = spawn(external_endpoint_handler(memory_database.clone()));
     let shutdown_handler = spawn(shutdown_handler(memory_database.clone()));
@@ -74,7 +75,7 @@ async fn main() {
     }
 }
 
-async fn shutdown_handler(memory_connection: Arc<libsql::Connection>) {
+async fn shutdown_handler(connection: Arc<libsql::Connection>) {
     let mut signal = tokio::signal::unix::signal(SignalKind::terminate())
         .expect("failed to install SIGTERM handler");
 
@@ -87,23 +88,28 @@ async fn shutdown_handler(memory_connection: Arc<libsql::Connection>) {
 
     #[cfg(feature = "export-postgres")]
     postgres_exporter
-        .publish(None, memory_connection.clone())
+        .publish(None, connection.clone())
         .await
         .unwrap_or_else(|e| {
             tracing::error!("Failed to flush events to PostgreSQL: {}", e);
             0
         });
 
-    export_rows_as_parquet(
-        memory_connection.clone(),
-        Arc::new(RwLock::new(
-            Utc::now()
-                .checked_sub_signed(TimeDelta::minutes(1))
-                .unwrap(),
-        )),
-    )
-    .await
-    .expect("did not export parquet");
+    #[cfg(feature = "export-parquet")]
+    let mut parquet_exporter = ParquetExporter {
+        last_export_at: Utc::now()
+            .checked_sub_signed(TimeDelta::minutes(1))
+            .unwrap(),
+    };
+
+    #[cfg(feature = "export-parquet")]
+    parquet_exporter
+        .publish(None, connection.clone())
+        .await
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to flush events to PostgreSQL: {}", e);
+            0
+        });
 }
 
 async fn external_endpoint_handler(connection: Arc<Connection>) {
@@ -180,54 +186,29 @@ async fn periodic_postgres_export_handler(memory_connection: Arc<libsql::Connect
     }
 }
 
-async fn export_rows_as_parquet(
-    connection: Arc<libsql::Connection>,
-    last_export_at: Arc<RwLock<DateTime<Utc>>>,
-) -> Result<()> {
-    let mut buffer = Vec::<u8>::new();
-
-    let last_export_at = last_export_at.clone();
-    let last_export_at = last_export_at.read().await;
-    let last_export_at = last_export_at.deref().to_owned();
-
-    let mut exporter = exporter::parquet::ParquetExporter {
-        buffer: &mut buffer,
-        last_export_at,
-    };
-
-    let rows = exporter.publish(None, connection.clone()).await?;
-
-    if rows > 0 {
-        let mut client = GoogleStorageClient::new()?;
-        let now = SystemTime::now();
-        let duration = now.duration_since(UNIX_EPOCH)?;
-        let micros = duration.as_micros();
-
-        client
-            .upload_binary_data(
-                &micros.to_string(),
-                buffer.as_slice(),
-                Some("application/vnd.apache.parquet"),
-            )
-            .await?;
-    }
-
-    Ok(())
-}
-
+#[cfg(feature = "export-parquet")]
 async fn periodic_parquet_export_handler(connection: Arc<libsql::Connection>) -> Result<()> {
     let mut interval = interval(Duration::from_secs(30)); // flush every 30 seconds
     let last_export_at = Arc::new(RwLock::new(Utc::now()));
+    let export_closure =
+        async |connection: Arc<libsql::Connection>, last_export_at: Arc<RwLock<DateTime<Utc>>>| {
+            let last_export_at_copy = last_export_at.clone();
+            let last_export_at_copy = last_export_at_copy.read().await;
+            let last_export_at_copy = last_export_at_copy.deref().to_owned();
+
+            let mut exporter = exporter::parquet::ParquetExporter {
+                last_export_at: last_export_at_copy,
+            };
+
+            exporter.publish(None, connection.clone()).await
+        };
 
     loop {
         interval.tick().await;
 
         let exported_started = Utc::now();
 
-        let handle = spawn(export_rows_as_parquet(
-            connection.clone(),
-            last_export_at.clone(),
-        ));
+        let handle = spawn(export_closure(connection.clone(), last_export_at.clone()));
 
         match handle.await {
             Err(err) => {
