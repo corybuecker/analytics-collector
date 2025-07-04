@@ -14,12 +14,6 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, TimeDelta, Utc};
-#[cfg(feature = "export-postgres")]
-use exporter::postgresql::PostgresqlExporter;
-
-#[cfg(feature = "export-parquet")]
-use exporter::parquet::ParquetExporter;
-
 use exporter::Exporter;
 use libsql::Connection;
 use middleware::{validate_body_length, validate_content_type};
@@ -36,6 +30,12 @@ use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{Instrument, error, instrument};
 use utilities::{generate_uuid_v4, get_environment_variable_with_default};
+
+#[cfg(feature = "export-postgres")]
+use exporter::postgresql::PostgresqlExporter;
+
+#[cfg(feature = "export-parquet")]
+use exporter::parquet::ParquetExporter;
 
 #[derive(Clone, Debug)]
 pub struct AppState {

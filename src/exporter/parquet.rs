@@ -6,7 +6,7 @@ use crate::{
     storage::{EventSerializer, google_storage::GoogleStorageClient, memory::flush_since},
 };
 use chrono::{DateTime, Utc};
-use serializer::ParqetSerializer;
+use serializer::{ParqetSerializer, VERSION};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -35,19 +35,14 @@ impl Exporter for ParquetExporter {
             let duration = now.duration_since(UNIX_EPOCH)?;
             let micros = duration.as_micros();
 
+            let filename = format!("{}/{}", VERSION, &micros.to_string());
+
             client
-                .upload_binary_data(
-                    &micros.to_string(),
-                    &buffer,
-                    Some("application/vnd.apache.parquet"),
-                )
+                .upload_binary_data(&filename, &buffer, Some("application/vnd.apache.parquet"))
                 .await?;
         }
 
-        info!(
-            "Parquet export completed successfully, exported {} rows",
-            row_count
-        );
+        info!("Parquet export completed successfully, exported {row_count} rows");
         Ok(row_count)
     }
 }
