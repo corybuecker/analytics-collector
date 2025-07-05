@@ -21,14 +21,11 @@ struct Event {
 
 pub struct PrometheusExporter<'a> {
     pub buffer: &'a mut String,
+    pub instance_id: String,
 }
 
 impl Exporter for PrometheusExporter<'_> {
-    async fn publish(
-        &mut self,
-        instance_id: Option<String>,
-        connection: Arc<libsql::Connection>,
-    ) -> Result<usize> {
+    async fn publish(&mut self, connection: Arc<libsql::Connection>) -> Result<usize> {
         let mut registry = Registry::default();
         let counter = Family::<Event, Counter>::default();
 
@@ -42,7 +39,7 @@ impl Exporter for PrometheusExporter<'_> {
         while let Some(row) = results.next().await? {
             let event: String = row.get(0)?;
             if let Ok(mut event) = serde_json::from_str::<Event>(&event) {
-                event.instance_id = instance_id.clone();
+                event.instance_id = Some(self.instance_id.clone());
                 counter.get_or_create(&event).inc();
             }
         }
@@ -82,12 +79,13 @@ mod tests {
             r#"{"entity":"login","action":"click","path":"/login","appId":"test-app"}"#,
         ];
         let conn = setup_db_with_events(events).await;
-        let instance_id = Some("test-app".to_string());
+        let instance_id = "test-app".to_string();
         let mut buffer = String::new();
         let mut exporter = PrometheusExporter {
             buffer: &mut buffer,
+            instance_id,
         };
-        exporter.publish(instance_id.clone(), conn).await.unwrap();
+        exporter.publish(conn).await.unwrap();
 
         // Should contain entity, action, path, and app_id as labels
         assert!(buffer.contains("entity=\"signup\""));
@@ -128,8 +126,9 @@ mod tests {
         let mut buffer = String::new();
         let mut exporter = PrometheusExporter {
             buffer: &mut buffer,
+            instance_id,
         };
-        exporter.publish(Some(instance_id), conn).await.unwrap();
+        exporter.publish(conn).await.unwrap();
         // Should still output valid Prometheus format, but no event lines
         assert!(buffer.contains("# TYPE events counter"));
         assert!(!buffer.contains("entity="));
@@ -147,8 +146,9 @@ mod tests {
         let mut buffer = String::new();
         let mut exporter = PrometheusExporter {
             buffer: &mut buffer,
+            instance_id,
         };
-        exporter.publish(Some(instance_id), conn).await.unwrap();
+        exporter.publish(conn).await.unwrap();
         // Only two valid events should be counted
         let signup_count = buffer
             .lines()

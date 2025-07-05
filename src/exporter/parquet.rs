@@ -2,8 +2,12 @@ mod serializer;
 
 use crate::{
     exporter::Exporter,
-    storage::{EventSerializer, google_storage::GoogleStorageClient, memory::flush_since},
+    storage::{EventSerializer, memory::flush_since},
 };
+
+#[cfg(feature = "export-parquet")]
+use crate::storage::google_storage::GoogleStorageClient;
+
 use chrono::{DateTime, Utc};
 use serializer::{ParqetSerializer, VERSION};
 use std::{
@@ -18,11 +22,7 @@ pub struct ParquetExporter {
 }
 
 impl Exporter for ParquetExporter {
-    async fn publish(
-        &mut self,
-        _exporter_identifier: Option<String>,
-        source: Arc<libsql::Connection>,
-    ) -> anyhow::Result<usize> {
+    async fn publish(&mut self, source: Arc<libsql::Connection>) -> anyhow::Result<usize> {
         info!("Starting parquet export");
 
         let event_records = flush_since(source.clone(), self.last_export_at).await?;

@@ -138,11 +138,7 @@ impl PostgresqlExporter {
 }
 
 impl Exporter for PostgresqlExporter {
-    async fn publish(
-        &mut self,
-        _export_identifier: Option<String>,
-        memory_connection: Arc<libsql::Connection>,
-    ) -> Result<usize> {
+    async fn publish(&mut self, memory_connection: Arc<libsql::Connection>) -> Result<usize> {
         if !self.enabled {
             tracing::info!("PostgreSQL exporter is disabled, skipping flush.");
             return Ok(0);
@@ -245,7 +241,7 @@ mod tests {
             .unwrap();
 
         // Publish events
-        let count = exporter.publish(None, memory_conn.clone()).await.unwrap();
+        let count = exporter.publish(memory_conn.clone()).await.unwrap();
         assert_eq!(count, 2);
 
         // Check events in Postgres
@@ -265,7 +261,7 @@ mod tests {
     async fn test_publish_no_events() {
         let memory_conn = setup_memory_db().await;
         let mut exporter = PostgresqlExporter::build().await.unwrap();
-        let count = exporter.publish(None, memory_conn.clone()).await.unwrap();
+        let count = exporter.publish(memory_conn.clone()).await.unwrap();
         assert_eq!(count, 0);
     }
 }

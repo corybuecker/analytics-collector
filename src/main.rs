@@ -6,29 +6,52 @@ mod schemas;
 mod storage;
 mod utilities;
 
+#[cfg(feature = "export-parquet")]
 use anyhow::Result;
+
 use axum::{
     Router,
     http::StatusCode,
     middleware::from_fn,
     routing::{get, post},
 };
+
+#[cfg(feature = "export-parquet")]
 use chrono::{DateTime, TimeDelta, Utc};
+
+#[cfg(any(feature = "export-postgres", feature = "export-parquet"))]
 use exporter::Exporter;
+
 use libsql::Connection;
 use middleware::{validate_body_length, validate_content_type};
+
+#[cfg(feature = "export-parquet")]
+use std::ops::Deref;
+
 use responses::{get_metrics, post_event};
 use rust_web_common::telemetry::TelemetryBuilder;
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 use storage::memory::initialize;
-use tokio::{select, signal::unix::SignalKind, sync::RwLock};
-use tokio::{
-    spawn,
-    time::{Duration, interval},
-};
+
+#[cfg(feature = "export-postgres")]
+use tracing::error;
+
+#[cfg(any(feature = "export-postgres", feature = "export-parquet"))]
+use tokio::time::{Duration, interval};
+
+#[cfg(feature = "export-parquet")]
+use tokio::sync::RwLock;
+
+use tokio::spawn;
+use tokio::{select, signal::unix::SignalKind};
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{Instrument, error, instrument};
+
+use tracing::instrument;
+
+#[cfg(any(feature = "export-postgres", feature = "export-parquet"))]
+use tracing::Instrument;
+
 use utilities::{generate_uuid_v4, get_environment_variable_with_default};
 
 #[cfg(feature = "export-postgres")]
@@ -93,7 +116,7 @@ async fn shutdown_handler(connection: Arc<libsql::Connection>) {
 
     #[cfg(feature = "export-postgres")]
     postgres_exporter
-        .publish(None, connection.clone())
+        .publish(connection.clone())
         .instrument(tracing::info_span!("export-postgres"))
         .await
         .unwrap_or_else(|e| {
@@ -110,7 +133,7 @@ async fn shutdown_handler(connection: Arc<libsql::Connection>) {
 
     #[cfg(feature = "export-parquet")]
     parquet_exporter
-        .publish(None, connection.clone())
+        .publish(connection.clone())
         .instrument(tracing::info_span!("export-parquet"))
         .await
         .unwrap_or_else(|e| {
@@ -154,10 +177,10 @@ async fn external_endpoint_handler(connection: Arc<Connection>) {
 async fn internal_endpoint_handler(connection: Arc<Connection>) {
     // This server is dedicated to serving Prometheus metrics for observability purposes.
     // It uses a separate port (($PORT || 8000) + 1) to isolate metrics traffic from application traffic.
-    let app_id = generate_uuid_v4();
+    let instance_id = generate_uuid_v4();
     let app = Router::new()
         .route("/metrics", get(get_metrics))
-        .with_state((connection, app_id))
+        .with_state((connection, instance_id))
         .layer(TraceLayer::new_for_http());
 
     let port = get_environment_variable_with_default("PORT", "8000".to_string());
@@ -184,7 +207,7 @@ async fn periodic_postgres_export_handler(memory_connection: Arc<libsql::Connect
         interval.tick().await;
 
         postgres_exporter
-            .publish(None, memory_connection.clone())
+            .publish(memory_connection.clone())
             .await
             .unwrap_or_else(|e| {
                 error!("failed to flush events to PostgreSQL: {e}");
@@ -207,7 +230,7 @@ async fn periodic_parquet_export_handler(connection: Arc<libsql::Connection>) ->
                 last_export_at: last_export_at_copy,
             };
 
-            exporter.publish(None, connection.clone()).await
+            exporter.publish(connection.clone()).await
         };
 
     loop {

@@ -1,7 +1,11 @@
+#[cfg(feature = "export-parquet")]
 pub mod google_storage;
 pub mod memory;
 
+#[cfg(feature = "export-parquet")]
 use anyhow::Result;
+
+#[cfg(feature = "export-parquet")]
 use memory::EventRecord;
 
 pub const SCHEMA: &str = r#"
@@ -13,6 +17,7 @@ CREATE TABLE events (
 );
 "#;
 
+#[cfg(feature = "export-parquet")]
 pub trait EventSerializer {
     fn to_bytes<'a>(
         &self,
