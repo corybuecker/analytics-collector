@@ -1,4 +1,3 @@
-mod schema;
 mod serializer;
 
 use crate::{
@@ -43,6 +42,7 @@ impl Exporter for ParquetExporter {
         }
 
         info!("Parquet export completed successfully, exported {row_count} rows");
+
         Ok(row_count)
     }
 }
