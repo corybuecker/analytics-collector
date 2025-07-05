@@ -1,10 +1,19 @@
 use super::SCHEMA;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use libsql::{Builder, Connection, de::from_row, params};
+use libsql::{Builder, Connection};
 use serde::{Deserialize, Deserializer, de::Visitor};
+
+#[cfg(feature = "export-parquet")]
+use libsql::{de::from_row, params};
+
+#[cfg(feature = "export-parquet")]
 use std::sync::Arc;
+
+#[cfg(feature = "export-parquet")]
 use tokio_stream::StreamExt;
+
+#[cfg(feature = "export-parquet")]
 use tracing::error;
 
 #[derive(Debug)]
@@ -111,6 +120,7 @@ pub async fn initialize() -> Result<Connection> {
     Ok(connection)
 }
 
+#[cfg(feature = "export-parquet")]
 pub async fn flush_since(
     connection: Arc<Connection>,
     since: DateTime<Utc>,

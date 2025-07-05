@@ -29,6 +29,6 @@ urlencoding = { version = "2.1.3" }
 uuid = { version = "1.17.0", features = ["v4"] }
 
 [features]
-default = ["export-postgres", "export-parquet"]
+default = ["export-parquet", "export-postgres"]
 export-postgres = ["dep:rust-database-common"]
 export-parquet = ["dep:arrow", "dep:arrow-array", "dep:arrow-schema", "dep:parquet"]

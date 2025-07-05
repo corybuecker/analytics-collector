@@ -23,6 +23,9 @@ jobs:
       - run: docker run -d -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=analytics_collector -e POSTGRES_DB=analytics_collector -v ./migrations/schema.sql:/docker-entrypoint-initdb.d/schema.sql postgres:17.4
       - uses: actions-rust-lang/setup-rust-toolchain@fb51252c7ba57d633bc668f941da052e410add48
       - run: cargo test
+      - run: cargo test --no-default-features
+      - run: cargo test --no-default-features --features export-postgres
+      - run: cargo test --no-default-features --features export-parquet
   integration_test:
     runs-on: ubuntu-latest
     env:

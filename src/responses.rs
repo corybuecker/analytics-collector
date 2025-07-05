@@ -51,7 +51,8 @@ pub async fn get_metrics(
 ) -> Result<impl IntoResponse, ApplicationError> {
     let mut exporter = exporter::prometheus::PrometheusExporter {
         buffer: &mut String::new(),
+        instance_id,
     };
-    exporter.publish(Some(instance_id), connection).await?;
+    exporter.publish(connection).await?;
     Ok((StatusCode::OK, exporter.buffer.clone()))
 }
