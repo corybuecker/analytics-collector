@@ -3,10 +3,10 @@ RUN mkdir -p /build/src
 WORKDIR /build
 COPY Cargo.lock Cargo.toml /build/
 RUN echo "fn main(){}" > /build/src/main.rs
-RUN cargo build --release
+RUN cargo build --release --no-default-features --features export-parquet
 COPY src /build/src
 RUN touch /build/src/main.rs
-RUN cargo build --release
+RUN cargo build --release --no-default-features --features export-parquet
 RUN cp /build/target/release/analytics-collector /build/analytics-collector
 
 FROM debian@sha256:0d8498a0e9e6a60011df39aab78534cfe940785e7c59d19dfae1eb53ea59babe
